@@ -37,6 +37,7 @@ class MasteryEngine:
                 correct_attempts=0,
                 recent_accuracy=0.0,
                 historical_accuracy=0.0,
+                retention_stage="EXPOSURE",
                 last_studied_at=datetime.now(timezone.utc),
             )
             self.db.add(record)
@@ -96,15 +97,26 @@ class MasteryEngine:
                 0.35 * attempt_val + 0.65 * mastery.recent_accuracy, 2
             )
 
-        # Cognitive difficulty multiplier
-        difficulty_multiplier = 0.7 + (difficulty_level * 0.1)
+        # Cognitive difficulty multiplier: Level 1=0.80, Level 2=0.90, Level 3=1.00, Level 4=1.10, Level 5=1.20
+        difficulty_factor = 0.70 + (difficulty_level * 0.10)
 
-        # Combined raw mastery score
-        raw_score = (
-            0.60 * mastery.recent_accuracy + 0.40 * mastery.historical_accuracy
-        ) * difficulty_multiplier
+        # Evidence-Damped Empirical Bayes Shrinkage Formula
+        # Prior parameters: K_prior = 1.7, baseline_mastery = 0.10
+        # Prevents lucky-answer inflation on low sample sizes
+        k_prior = 1.7
+        m_baseline = 0.10
+        observed_accuracy = 0.60 * mastery.recent_accuracy + 0.40 * mastery.historical_accuracy
+        effective_evidence = min(float(mastery.evidence_count), 10.0)
 
-        mastery.mastery_score = round(min(1.0, max(0.0, raw_score)), 2)
+        prior_mastery = mastery.mastery_score or 0.0
+        bayesian_mastery = (
+            (k_prior * m_baseline) + (effective_evidence * observed_accuracy * difficulty_factor)
+        ) / (k_prior + effective_evidence)
+
+        if is_correct and prior_mastery >= 0.70:
+            mastery.mastery_score = round(min(1.0, max(bayesian_mastery, prior_mastery)), 2)
+        else:
+            mastery.mastery_score = round(min(1.0, max(0.0, bayesian_mastery)), 2)
 
         # Calculate Confidence Tier based on evidence depth
         mastery.confidence = self.calculate_confidence(
@@ -114,15 +126,16 @@ class MasteryEngine:
             max_difficulty=mastery.difficulty_exposure,
         )
 
-        # Retention Stage Updates
-        if mastery.retention_stage is None or mastery.retention_stage == "EXPOSURE":
-            if mastery.evidence_count >= 3:
-                mastery.retention_stage = "DEVELOPING"
+        # Retention Stage Updates (Gated by evidence depth and confirmed mastery)
         if mastery.mastery_score >= 0.70:
-            if mastery.retention_stage in [None, "EXPOSURE", "DEVELOPING"]:
+            if getattr(mastery, "confirmed_mastery", False):
+                mastery.retention_stage = "RETAINED_MASTERY"
+            else:
                 mastery.retention_stage = "INITIAL_MASTERY"
-        if getattr(mastery, "confirmed_mastery", False) and mastery.mastery_score >= 0.70 and mastery.retention_stage in ["INITIAL_MASTERY", "RETAINED_MASTERY"]:
-            mastery.retention_stage = "RETAINED_MASTERY"
+        elif mastery.evidence_count >= 3:
+            mastery.retention_stage = "DEVELOPING"
+        else:
+            mastery.retention_stage = "EXPOSURE"
 
         now = datetime.now(timezone.utc)
         mastery.last_assessed_at = now
@@ -142,6 +155,25 @@ class MasteryEngine:
 
         mastery.next_revision_at = now + timedelta(days=interval_days)
 
+        await self.db.commit()
+        await self.db.refresh(mastery)
+        return mastery
+
+    async def recalibrate_on_feynman_failure(self, student_id: str, concept_id: str) -> ConceptMastery:
+        """
+        Recalibrates mastery downward when a student fails the Feynman explain-it-back test.
+        Penalizes mastery score, unconfirms mastery, and downgrades retention stage.
+        """
+        mastery = await self.get_or_create_concept_mastery(student_id, concept_id)
+        mastery.confirmed_mastery = False
+        mastery.mastery_score = round(max(0.15, mastery.mastery_score - 0.15), 2)
+        mastery.recent_accuracy = round(max(0.20, mastery.recent_accuracy * 0.75), 2)
+        if mastery.retention_stage in ["INITIAL_MASTERY", "RETAINED_MASTERY"]:
+            mastery.retention_stage = "DEVELOPING"
+
+        now = datetime.now(timezone.utc)
+        mastery.last_assessed_at = now
+        mastery.next_revision_at = now + timedelta(days=1)
         await self.db.commit()
         await self.db.refresh(mastery)
         return mastery

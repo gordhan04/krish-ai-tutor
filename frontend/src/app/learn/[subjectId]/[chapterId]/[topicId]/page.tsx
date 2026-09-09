@@ -104,7 +104,7 @@ export default function LearnTopicPage() {
         setCurrentPhase(lessonData.lesson_phase || 'EXPLANATION');
 
         // Fetch adaptive practice question for concept
-        const qData = await api.getPracticeQuestion(topicId, lessonData.concept_id);
+        const qData = await api.getPracticeQuestion(topicId, lessonData.concept_id, lessonData.session_id);
         setQuestion(qData);
       } catch (err: any) {
         console.error('Failed to start lesson:', err);

@@ -187,32 +187,63 @@ class MockAIProvider(AIProvider):
                 "Dissolved mineral salts dissociate into positive and negative ions",
                 "These mobile ions carry electric current through the liquid",
             ]
-        normalized = student_explanation.lower()
+        normalized = student_explanation.lower().strip()
+
+        # Check for explicit ignorance or evasion phrases
+        IGNORANCE_PATTERNS = [
+            r"\b(don't|dont|do not)\s+know\b",
+            r"\bno\s+idea\b",
+            r"\bnot\s+sure\b",
+            r"\bno\s+clue\b",
+            r"\b(don't|dont|do not)\s+understand\b",
+            r"\bhaven'?t\s+a\s+clue\b",
+            r"\bcan'?t\s+explain\b",
+            r"\bi\s+forget\b",
+            r"\bforgot\b",
+            r"\bblah\b",
+        ]
+        is_ignorant = any(re.search(pat, normalized) for pat in IGNORANCE_PATTERNS)
+        word_count = len([w for w in re.split(r'\W+', normalized) if w])
+
         matched = []
         missing = []
 
-        for kp in key_points:
-            words = [w for w in re.split(r'\W+', kp.lower()) if len(w) > 3]
-            if any(w in normalized for w in words):
-                matched.append(kp)
-            else:
-                missing.append(kp)
-
-        score = round(len(matched) / max(len(key_points), 1), 2)
-        is_correct = score >= 0.50
-
-        if is_correct:
-            feedback = (
-                f"Fantastic synthesis in your own words, Krish! 🌟 You explained {len(matched)} key points accurately. "
-                + (f"For perfection on exams, don't forget: {missing[0]}." if missing else "Your explanation shows solid conceptual mastery!")
-            )
-            depth = "DEEP" if score >= 0.80 else "SOLID"
-        else:
-            feedback = (
-                f"Good effort trying to explain it back! You're on the right track, but some detail is missing: "
-                f"remember to explain {', '.join(missing[:2])}."
-            )
+        if is_ignorant or word_count < 4:
+            matched = []
+            missing = list(key_points)
+            score = 0.0
+            is_correct = False
             depth = "SURFACE"
+            feedback = (
+                "It seems you might be feeling unsure about this concept. "
+                f"Take a moment to review the core idea: {missing[0]}. Would you like to review the step-by-step explanation together?"
+            )
+        else:
+            stopwords = {"that", "this", "these", "those", "with", "from", "into", "have", "been", "poor", "good"}
+            for kp in key_points:
+                words = [w for w in re.split(r'\W+', kp.lower()) if len(w) > 3 and w not in stopwords]
+                matched_words = [w for w in words if re.search(rf"\b{re.escape(w)}\b", normalized)]
+                # Require at least 2 substantive keyword matches per key point (or 1 if kp only has 1)
+                req_count = min(2, len(words))
+                if len(matched_words) >= req_count:
+                    matched.append(kp)
+                else:
+                    missing.append(kp)
+
+            score = round(len(matched) / max(len(key_points), 1), 2)
+            is_correct = score >= 0.60
+            if is_correct:
+                feedback = (
+                    f"Fantastic synthesis in your own words, Krish! You explained {len(matched)} key points accurately. "
+                    + (f"For perfection on exams, don't forget: {missing[0]}." if missing else "Your explanation shows solid conceptual mastery!")
+                )
+                depth = "DEEP" if score >= 0.80 else "SOLID"
+            else:
+                feedback = (
+                    f"Good effort trying to explain it back! You're on the right track, but some detail is missing: "
+                    f"remember to explain {', '.join(missing[:2])}."
+                )
+                depth = "SURFACE"
 
         return {
             "score": score,
@@ -262,10 +293,17 @@ class MockAIProvider(AIProvider):
     ) -> EvaluationResult:
         normalized_answer = student_answer.lower()
 
-        # Check for known misconception traps
+        # Check for known misconception traps with negation awareness
         detected_misconception = None
         for trap_keyword, misconception_desc in misconception_traps.items():
-            if trap_keyword.lower() in normalized_answer:
+            kw = trap_keyword.lower()
+            if kw in normalized_answer:
+                # Check if keyword is explicitly negated by prefix or postfix negation
+                prefix_neg = rf"\b(not|no|never|without|neither|nor|false|incorrect|don't|dont|doesn't|rather\s+than|instead\s+of)\s+(?:[\w\s]{{0,25}})?\b{re.escape(kw)}\b"
+                postfix_neg = rf"\b{re.escape(kw)}\b\s+(?:[\w\s]{{0,15}})?(do\s+not|cannot|can't|don't|dont|does\s+not|doesn't|never|not\s+present)"
+                if re.search(prefix_neg, normalized_answer) or re.search(postfix_neg, normalized_answer):
+                    # Student explicitly refuted or excluded the misconception!
+                    continue
                 detected_misconception = misconception_desc
                 break
 
@@ -296,7 +334,7 @@ class MockAIProvider(AIProvider):
             score = min(1.0, round(base_score, 2))
             is_correct = True
             feedback = (
-                f"Spot on! 🎯 You clearly grasped the core mechanism. "
+                f"Spot on! You clearly grasped the core mechanism. "
                 + (f"To make your school exam answer 100% complete, also mention: {', '.join(missing)}." if missing else "Your explanation is complete and grounded in your textbook!")
             )
             action = "advance"

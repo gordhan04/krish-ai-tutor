@@ -34,7 +34,7 @@ class TutorEngine:
     ) -> Dict[str, Any]:
         """Initializes a new learning session in LESSON_START / TEACHING state."""
         if not concept_id:
-            c_stmt = select(Concept).where(Concept.topic_id == topic_id).order_by(Concept.id)
+            c_stmt = select(Concept).where(Concept.topic_id == topic_id).order_by(Concept.difficulty_tier.asc(), Concept.name.asc())
             c_result = await self.db.execute(c_stmt)
             concept = c_result.scalars().first()
             if not concept:
@@ -90,27 +90,47 @@ class TutorEngine:
         chunks = await self.retriever.get_topic_chunks(topic_id, concept_id=concept_id)
         curriculum_context = self.retriever.format_context_for_prompt(chunks)
 
-        # Create session in database
-        include_diagnostic = not has_prior_evidence
-        session = LearningSession(
-            student_id=student_id,
-            topic_id=topic_id,
-            state=TutorState.TEACHING.value,
-            lesson_phase=LessonPhase.EXPLANATION.value,
-            session_goal=f"Master {concept.name}",
-            current_concept_id=concept_id,
-            hint_level=0,
-            starting_mastery=starting_mastery,
-            strategy_used=selected_strategy,
-            attempted_question_ids=[],
-            questions_attempted_count=0,
-            hints_used_count=0,
-            learning_gain=0.0,
-            next_recommended_action="Reflect on check question or initiate Socratic check",
-            started_at=datetime.now(timezone.utc),
+        # Check if an active unfinished session already exists for this student and topic
+        active_sess_stmt = (
+            select(LearningSession)
+            .where(
+                LearningSession.student_id == student_id,
+                LearningSession.topic_id == topic_id,
+                LearningSession.ended_at.is_(None),
+                LearningSession.state != TutorState.CHAPTER_COMPLETE.value,
+            )
+            .order_by(LearningSession.started_at.desc())
         )
-        self.db.add(session)
-        await self.db.flush()
+        active_res = await self.db.execute(active_sess_stmt)
+        existing_session = active_res.scalars().first()
+
+        if existing_session:
+            session = existing_session
+            if concept_id and session.current_concept_id != concept_id:
+                session.current_concept_id = concept_id
+            include_diagnostic = False
+            selected_strategy = session.strategy_used or selected_strategy
+        else:
+            include_diagnostic = not has_prior_evidence
+            session = LearningSession(
+                student_id=student_id,
+                topic_id=topic_id,
+                state=TutorState.TEACHING.value,
+                lesson_phase=LessonPhase.EXPLANATION.value,
+                session_goal=f"Master {concept.name}",
+                current_concept_id=concept_id,
+                hint_level=0,
+                starting_mastery=starting_mastery,
+                strategy_used=selected_strategy,
+                attempted_question_ids=[],
+                questions_attempted_count=0,
+                hints_used_count=0,
+                learning_gain=0.0,
+                next_recommended_action="Reflect on check question or initiate Socratic check",
+                started_at=datetime.now(timezone.utc),
+            )
+            self.db.add(session)
+            await self.db.flush()
 
         # Generate targeted explanation using selected pedagogical strategy
         tutor_response: TutorResponse = await self.ai.generate_strategy_explanation(
@@ -150,6 +170,8 @@ class TutorEngine:
             "concept_name": concept.name,
             "learning_objective": objective_text,
             "starting_mastery": starting_mastery,
+            "strategy_used": session.strategy_used,
+            "include_diagnostic": include_diagnostic,
             "message": tutor_response.message,
             "hint_level": 0,
             "suggested_replies": tutor_response.suggested_quick_replies,
@@ -387,12 +409,16 @@ class TutorEngine:
         session.pre_test_score = round(diagnostic_score, 2)
         session.starting_mastery = round(diagnostic_score * 0.5, 2)
 
-        if diagnostic_score >= 0.70:
+        if diagnostic_score >= 0.90:
+            session.strategy_used = "FIRST_PRINCIPLES"
+        elif diagnostic_score >= 0.65:
             session.strategy_used = "STEP_BY_STEP"
         elif diagnostic_score >= 0.40:
             session.strategy_used = "REAL_WORLD_EXAMPLE"
-        else:
+        elif diagnostic_score >= 0.25:
             session.strategy_used = "ANALOGY"
+        else:
+            session.strategy_used = "WORKED_EXAMPLE"
 
         await self.db.commit()
         await self.db.refresh(session)

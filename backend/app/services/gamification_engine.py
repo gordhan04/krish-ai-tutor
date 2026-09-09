@@ -88,6 +88,21 @@ class GamificationEngine:
         xp_record.current_level = new_level
         xp_record.updated_at = datetime.now(timezone.utc)
 
+        # Atomically persist idempotency milestone event
+        if item_key:
+            event = LearningEvent(
+                session_id="system",
+                event_type=LearningEventType.ACHIEVEMENT_UNLOCKED.value,
+                payload={
+                    "item_key": item_key,
+                    "student_id": student_id,
+                    "amount": amount,
+                    "reason": reason,
+                },
+                timestamp=datetime.now(timezone.utc),
+            )
+            self.db.add(event)
+
         await self.db.commit()
         await self.db.refresh(xp_record)
 

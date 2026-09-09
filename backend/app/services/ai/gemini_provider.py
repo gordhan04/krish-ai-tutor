@@ -251,9 +251,56 @@ class GeminiProvider(AIProvider):
         student_name: str = "Krish",
         prior_misconception: Optional[str] = None,
     ) -> TutorResponse:
-        return await self.fallback.generate_strategy_explanation(
-            concept_name, learning_objective, curriculum_context, strategy, student_name, prior_misconception
+        if not self.api_key:
+            return await self.fallback.generate_strategy_explanation(
+                concept_name, learning_objective, curriculum_context, strategy, student_name, prior_misconception
+            )
+
+        strategy_prompts = {
+            "FIRST_PRINCIPLES": "Derive the explanation from fundamental physical/chemical laws and atomic principles.",
+            "WORKED_EXAMPLE": "Provide a concrete, fully solved step-by-step example problem or scenario.",
+            "ANALOGY": "Explain using a relatable real-world physical analogy suitable for an 8th grader.",
+            "REAL_WORLD_ANALOGY": "Explain using a relatable real-world physical analogy suitable for an 8th grader.",
+            "REAL_WORLD_EXAMPLE": "Ground the concept in an everyday household or environmental example.",
+            "STEP_BY_STEP": "Break the concept down into 3-4 numbered sequential physical/chemical steps.",
+            "CORRECT_MISCONCEPTION": f"Gently correct the misconception '{prior_misconception or 'common error'}' contrasting it with textbook evidence.",
+            "SOCRATIC": "Pose thought-provoking inquiry questions to guide student reasoning.",
+        }
+        guidance = strategy_prompts.get(strategy.upper(), "Provide a clear, engaging explanation.")
+
+        prompt = (
+            f"You are Krish's AI Science Tutor. Krish is an 8th grade student.\n"
+            f"Concept: {concept_name}\n"
+            f"Learning Objective: {learning_objective}\n"
+            f"Pedagogical Strategy: {strategy.upper()} ({guidance})\n"
+            f"Curriculum Reference:\n{curriculum_context}\n\n"
+            f"Instructions: Generate an explanation tailored strictly to the {strategy.upper()} strategy. "
+            f"Keep language encouraging, age-appropriate, and directly grounded in the curriculum."
         )
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.AI_MODEL_FAST}:generateContent?key={self.api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 800},
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return TutorResponse(
+                    message=text,
+                    pedagogical_intent="explain",
+                    strategy=strategy,
+                    hint_level=0,
+                    suggested_quick_replies=["I understand! Let's practice.", "Could you give another example?"],
+                )
+        except Exception:
+            return await self.fallback.generate_strategy_explanation(
+                concept_name, learning_objective, curriculum_context, strategy, student_name, prior_misconception
+            )
 
     async def evaluate_socratic_response(
         self,
@@ -262,9 +309,49 @@ class GeminiProvider(AIProvider):
         student_response: str,
         curriculum_context: str,
     ) -> Dict[str, Any]:
-        return await self.fallback.evaluate_socratic_response(
-            concept_name, socratic_question, student_response, curriculum_context
+        if not self.api_key:
+            return await self.fallback.evaluate_socratic_response(
+                concept_name, socratic_question, student_response, curriculum_context
+            )
+
+        prompt = (
+            f"You are evaluating an 8th grade student's response to a Socratic tutoring question.\n"
+            f"Concept: {concept_name}\n"
+            f"Socratic Question Asked: {socratic_question}\n"
+            f"Student's Response: {student_response}\n"
+            f"Curriculum Context:\n{curriculum_context}\n\n"
+            f"Return a JSON object with:\n"
+            f"- 'understands_core_point': boolean (true if student exhibits sound intuition)\n"
+            f"- 'intuition_valid': boolean\n"
+            f"- 'misconception_detected': string or null (if student stated a scientific misconception)\n"
+            f"- 'pedagogical_feedback': string (warm, encouraging response acknowledging what's right and clarifying errors)\n"
+            f"- 'next_action': string ('advance_to_practice' or 'remedy_misconception' or 'clarify')"
         )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.AI_MODEL_FAST}:generateContent?key={self.api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json",
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                clean_text = text.strip()
+                if clean_text.startswith("```"):
+                    clean_text = clean_text.split("\n", 1)[1] if "\n" in clean_text else clean_text
+                    if clean_text.endswith("```"):
+                        clean_text = clean_text.rsplit("```", 1)[0]
+                return json.loads(clean_text.strip())
+        except Exception:
+            return await self.fallback.evaluate_socratic_response(
+                concept_name, socratic_question, student_response, curriculum_context
+            )
 
     async def generate_misconception_remediation(
         self,
@@ -273,9 +360,45 @@ class GeminiProvider(AIProvider):
         curriculum_context: str,
         student_name: str = "Krish",
     ) -> TutorResponse:
-        return await self.fallback.generate_misconception_remediation(
-            concept_name, misconception_text, curriculum_context, student_name
+        if not self.api_key:
+            return await self.fallback.generate_misconception_remediation(
+                concept_name, misconception_text, curriculum_context, student_name
+            )
+
+        prompt = (
+            f"You are Krish's AI Science Tutor. Krish holds a misconception.\n"
+            f"Concept: {concept_name}\n"
+            f"Misconception: {misconception_text}\n"
+            f"Textbook Evidence:\n{curriculum_context}\n\n"
+            f"Instructions:\n"
+            f"1. Acknowledge why someone might think this (normalize the error warmly).\n"
+            f"2. Present the textbook experimental evidence that disproves it.\n"
+            f"3. Highlight the contrast clearly (e.g. 'Metals = free electrons; Liquids = dissolved ions').\n"
+            f"4. Ask a quick check question to see if Krish sees the difference."
         )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.AI_MODEL_FAST}:generateContent?key={self.api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 600},
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return TutorResponse(
+                    message=text,
+                    pedagogical_intent="remediation",
+                    strategy="CORRECT_MISCONCEPTION",
+                    hint_level=0,
+                    suggested_quick_replies=["I see the difference now.", "Can we try a practice question?"],
+                )
+        except Exception:
+            return await self.fallback.generate_misconception_remediation(
+                concept_name, misconception_text, curriculum_context, student_name
+            )
 
     async def evaluate_explain_it_back(
         self,
@@ -285,7 +408,54 @@ class GeminiProvider(AIProvider):
         curriculum_context: str = "",
         concept_explanation: str = "",
     ) -> Dict[str, Any]:
-        return await self.fallback.evaluate_explain_it_back(
-            concept_name, student_explanation, key_points, curriculum_context, concept_explanation
+        if not self.api_key:
+            return await self.fallback.evaluate_explain_it_back(
+                concept_name, student_explanation, key_points, curriculum_context, concept_explanation
+            )
+
+        kp_text = "\n- ".join(key_points or ["Distilled water lacks ions", "Dissolved mineral salts form ions", "Mobile ions carry current"])
+        prompt = (
+            f"You are evaluating a student's explain-it-back synthesis (Feynman Technique) for Class 8 Science.\n"
+            f"Concept: {concept_name}\n"
+            f"Key Points Expected:\n- {kp_text}\n"
+            f"Textbook Context:\n{curriculum_context or concept_explanation}\n"
+            f"Student Explanation: '{student_explanation}'\n\n"
+            f"Evaluate whether the student demonstrates genuine conceptual understanding in their own words.\n"
+            f"IMPORTANT: If the student expresses ignorance (e.g. 'I don't know', 'no idea'), score must be 0.0 and accurate must be false.\n"
+            f"Return JSON with keys:\n"
+            f"- 'score': float between 0.0 and 1.0\n"
+            f"- 'accurate': boolean (true if score >= 0.60)\n"
+            f"- 'depth': 'DEEP' | 'SOLID' | 'SURFACE'\n"
+            f"- 'feedback': string (constructive, encouraging feedback highlighting what was explained well and any missing points)\n"
+            f"- 'criteria_scores': {{'accuracy': float, 'completeness': float, 'clarity': float}}\n"
+            f"- 'suggested_replies': list of 2-3 quick replies"
         )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.AI_MODEL_ADVANCED}:generateContent?key={self.api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json",
+            },
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                clean_text = text.strip()
+                if clean_text.startswith("```"):
+                    clean_text = clean_text.split("\n", 1)[1] if "\n" in clean_text else clean_text
+                    if clean_text.endswith("```"):
+                        clean_text = clean_text.rsplit("```", 1)[0]
+                parsed = json.loads(clean_text.strip())
+                parsed["score"] = max(0.0, min(1.0, float(parsed.get("score", 0.0))))
+                parsed["accurate"] = bool(parsed.get("accurate", parsed["score"] >= 0.60))
+                return parsed
+        except Exception:
+            return await self.fallback.evaluate_explain_it_back(
+                concept_name, student_explanation, key_points, curriculum_context, concept_explanation
+            )
 

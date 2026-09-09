@@ -26,7 +26,7 @@ async def test_mastery_confidence_and_evidence_depth(db_session):
     m1 = await mastery_engine.record_answer_attempt(student.id, concept.id, is_correct=True, difficulty_level=2)
     assert m1.evidence_count == 1
     assert m1.confidence == "LOW"
-    assert m1.mastery_score > 0.50  # High score, but low confidence
+    assert m1.mastery_score > 0.30  # Evidence-damped score, low confidence
 
     # 2. Second attempt correct: count = 2 -> still LOW confidence
     m2 = await mastery_engine.record_answer_attempt(student.id, concept.id, is_correct=True, difficulty_level=2)

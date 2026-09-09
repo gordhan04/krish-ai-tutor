@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.api.deps import get_current_student
+from app.api.deps import get_current_student, verify_session_ownership
 from app.models.user import Student
 from app.services.tutor_engine import TutorEngine
 from app.schemas.tutor import (
@@ -41,6 +41,8 @@ async def start_lesson(
             strategy=payload.strategy,
         )
         return LessonStartResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -51,6 +53,7 @@ async def get_hint(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = TutorEngine(db)
     try:
         result = await engine.get_next_hint(
@@ -58,6 +61,8 @@ async def get_hint(
             question_prompt=payload.question_prompt,
         )
         return HintResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -68,10 +73,13 @@ async def socratic_check(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = TutorEngine(db)
     try:
         result = await engine.check_socratic_understanding(session_id=payload.session_id)
         return SocraticCheckResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -82,6 +90,7 @@ async def socratic_evaluate(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = TutorEngine(db)
     try:
         result = await engine.evaluate_socratic_response(
@@ -89,6 +98,8 @@ async def socratic_evaluate(
             student_response=payload.student_response,
         )
         return SocraticEvaluateResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -99,10 +110,13 @@ async def run_diagnostic(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = TutorEngine(db)
     try:
         result = await engine.run_diagnostic(session_id=payload.session_id)
         return DiagnosticStartResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -113,6 +127,7 @@ async def evaluate_diagnostic(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = TutorEngine(db)
     try:
         result = await engine.evaluate_diagnostic(
@@ -120,6 +135,8 @@ async def evaluate_diagnostic(
             diagnostic_score=payload.diagnostic_score,
         )
         return DiagnosticEvaluateResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -130,6 +147,7 @@ async def remediate_misconception(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = TutorEngine(db)
     try:
         result = await engine.remediate_misconception(
@@ -137,6 +155,8 @@ async def remediate_misconception(
             misconception_id=payload.misconception_id,
         )
         return RemediateResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -147,9 +167,29 @@ async def complete_session(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = TutorEngine(db)
     try:
         result = await engine.check_mastery_completion(session_id=payload.session_id)
         return MasteryCompleteResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/session/resume/{session_id}")
+async def resume_session(
+    session_id: str,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_session_ownership(session_id, student.id, db)
+    engine = TutorEngine(db)
+    try:
+        result = await engine.resume_session(session_id=session_id)
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

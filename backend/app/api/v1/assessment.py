@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.api.deps import get_current_student
+from app.api.deps import get_current_student, verify_session_ownership
 from app.models.user import Student
 from app.services.assessment_engine import AssessmentEngine
 from app.services.mastery_engine import MasteryEngine
@@ -25,6 +25,9 @@ async def get_practice_question(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    if session_id:
+        await verify_session_ownership(session_id, student.id, db)
+
     mastery_engine = MasteryEngine(db)
     mastery = await mastery_engine.get_or_create_concept_mastery(student.id, concept_id)
 
@@ -46,6 +49,9 @@ async def submit_answer(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    if payload.session_id:
+        await verify_session_ownership(payload.session_id, student.id, db)
+
     engine = AssessmentEngine(db)
     try:
         result = await engine.evaluate_answer(
@@ -56,6 +62,8 @@ async def submit_answer(
             session_id=payload.session_id,
         )
         return AnswerSubmitResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -66,6 +74,7 @@ async def explain_it_back(
     student: Student = Depends(get_current_student),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_session_ownership(payload.session_id, student.id, db)
     engine = AssessmentEngine(db)
     try:
         result = await engine.evaluate_explain_it_back(
@@ -74,5 +83,7 @@ async def explain_it_back(
             concept_id=payload.concept_id,
         )
         return ExplainItBackResponse(**result)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

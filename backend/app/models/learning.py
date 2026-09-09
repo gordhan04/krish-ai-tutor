@@ -56,7 +56,7 @@ class ConceptMastery(Base):
     evidence_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     confidence: Mapped[str] = mapped_column(String(20), default="LOW", nullable=False)  # "LOW", "MEDIUM", "HIGH"
     difficulty_exposure: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    retention_stage: Mapped[str] = mapped_column(String(32), default="INITIAL_MASTERY", nullable=False)  # INITIAL_MASTERY, RETAINED_MASTERY
+    retention_stage: Mapped[str] = mapped_column(String(32), default="EXPOSURE", nullable=False)  # EXPOSURE, DEVELOPING, INITIAL_MASTERY, RETAINED_MASTERY
     confirmed_mastery: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     consecutive_correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_attempts: Mapped[int] = mapped_column(Integer, default=0)

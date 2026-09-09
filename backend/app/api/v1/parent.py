@@ -18,16 +18,30 @@ router = APIRouter(prefix="/parent", tags=["Parent Dashboard"])
 
 @router.get("/dashboard", response_model=ParentDashboardOut)
 async def get_parent_dashboard(
+    student_id: str | None = None,
     current_parent: User = Depends(get_current_parent),
     db: AsyncSession = Depends(get_db),
 ):
-    # Fetch primary student associated with the family account
-    s_stmt = select(Student)
+    # Fetch authorized student associated with the authenticated parent account
+    if student_id:
+        if current_parent.role == "admin":
+            s_stmt = select(Student).where(Student.id == student_id)
+        else:
+            s_stmt = select(Student).where(Student.id == student_id, Student.parent_id == current_parent.id)
+    else:
+        if current_parent.role == "admin":
+            s_stmt = select(Student)
+        else:
+            s_stmt = select(Student).where(Student.parent_id == current_parent.id)
+
     s_res = await db.execute(s_stmt)
     student = s_res.scalars().first()
 
     if not student:
-        raise HTTPException(status_code=404, detail="No student profile registered under this parent account")
+        raise HTTPException(
+            status_code=404,
+            detail="No authorized student profile registered under this parent account",
+        )
 
     # Fetch Concept Masteries
     m_stmt = (

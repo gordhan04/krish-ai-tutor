@@ -77,3 +77,26 @@ async def get_current_parent(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     return current_user
+
+
+async def verify_session_ownership(
+    session_id: str,
+    student_id: str,
+    db: AsyncSession,
+):
+    from app.models.learning import LearningSession
+    stmt = select(LearningSession).where(LearningSession.id == session_id)
+    result = await db.execute(stmt)
+    session = result.scalars().first()
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Learning session {session_id} not found",
+        )
+    if session.student_id != student_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You do not have permission to access or modify this learning session",
+        )
+    return session
+

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.api.deps import get_current_student
+from app.api.deps import get_current_student, verify_session_ownership
 from app.models.user import Student
 from app.services.tutor_engine import TutorEngine
 from app.services.assessment_engine import AssessmentEngine
@@ -26,6 +26,8 @@ async def voice_interact(
     Unified voice tutoring endpoint.
     Routes student verbal responses through the central Tutor and Assessment engines.
     """
+    await verify_session_ownership(payload.session_id, student.id, db)
+
     tts_provider = StandardWebSpeechTTS()
     tutor_engine = TutorEngine(db)
     assessment_engine = AssessmentEngine(db)
@@ -33,11 +35,28 @@ async def voice_interact(
     try:
         tutor_message = ""
         next_mode = payload.mode
+        clean_transcript = (payload.transcript or "").strip()
+
+        # Handle empty/noise transcript gracefully
+        if payload.mode != VoiceMode.TEACH and not clean_transcript:
+            prompt_msg = "I didn't hear an answer. You can try speaking again, or type your answer in the box below."
+            return VoiceInteractionResponse(
+                session_id=payload.session_id,
+                mode=payload.mode,
+                turn_state=VoiceTurnState.IDLE,
+                tutor_text_response=prompt_msg,
+                audio_synthesis_instructions=await tts_provider.synthesize(prompt_msg),
+                fallback_to_text=False,
+                next_mode=payload.mode,
+            )
 
         if payload.mode == VoiceMode.TEACH:
-            # Student asks for teaching or explanation verbally
-            socratic_res = await tutor_engine.check_socratic_understanding(payload.session_id)
-            tutor_message = socratic_res["socratic_question"]
+            # Student asks to hear teaching or concept explanation verbally
+            sess_info = await tutor_engine.resume_session(payload.session_id)
+            c_name = sess_info.get("concept_name", "this concept")
+            sources = sess_info.get("curriculum_sources", [])
+            excerpt = sources[0].get("excerpt", "") if sources else ""
+            tutor_message = f"Let's explore {c_name}. {excerpt} When you're ready, let me know what you think happens!"
             next_mode = VoiceMode.SOCRATIC
 
         elif payload.mode == VoiceMode.SOCRATIC:

@@ -191,6 +191,7 @@ class AssessmentEngine:
         # Capture baseline mastery before recording new attempt
         prior_mastery_record = await self.mastery_engine.get_or_create_concept_mastery(student_id, question.concept_id)
         old_mastery_score = prior_mastery_record.mastery_score
+        old_confidence = prior_mastery_record.confidence
 
         # Update Mastery Deterministically (with Confidence, Evidence Count & Consecutive Correct)
         updated_mastery = await self.mastery_engine.record_answer_attempt(
@@ -200,7 +201,20 @@ class AssessmentEngine:
             difficulty_level=question.cognitive_level,
         )
 
-        # Handle Misconception Logging and Retest Resolution
+        # Calibrate remediation depth when student answers incorrectly
+        remediation_depth = None
+        if not is_correct:
+            if old_confidence == "HIGH":
+                remediation_depth = "DEEP"
+            elif old_confidence == "MEDIUM":
+                remediation_depth = "MODERATE"
+            else:
+                remediation_depth = "SCAFFOLD"
+
+        # Flag reinforcement when correct answer is achieved with low evidence confidence
+        reinforcement_needed = bool(is_correct and updated_mastery.confidence == "LOW")
+
+        # Handle Misconception Logging and Targeted Retest Resolution
         retest_remediated = False
         if misconception_detected:
             misc_stmt = select(Misconception).where(
@@ -225,18 +239,24 @@ class AssessmentEngine:
                 )
                 self.db.add(new_misc)
         elif is_correct:
-            # Retest check: if student had an active misconception for this concept, resolve it
-            misc_active_stmt = select(Misconception).where(
-                Misconception.student_id == student_id,
-                Misconception.concept_id == question.concept_id,
-                Misconception.is_remediated == False,
-            )
-            misc_active_res = await self.db.execute(misc_active_stmt)
-            active_misc = misc_active_res.scalars().first()
-            if active_misc:
-                active_misc.is_remediated = True
-                active_misc.resolved_at = datetime.now(timezone.utc)
-                retest_remediated = True
+            # Retest check: only resolve if question is cognitive_level >= 3 (Application/Reasoning)
+            # OR question rubric explicitly targets misconception traps
+            is_targeted_retest = question.cognitive_level >= 3
+            if not is_targeted_retest and question.rubric and question.rubric.misconception_traps:
+                is_targeted_retest = True
+
+            if is_targeted_retest:
+                misc_active_stmt = select(Misconception).where(
+                    Misconception.student_id == student_id,
+                    Misconception.concept_id == question.concept_id,
+                    Misconception.is_remediated == False,
+                )
+                misc_active_res = await self.db.execute(misc_active_stmt)
+                active_misc = misc_active_res.scalars().first()
+                if active_misc:
+                    active_misc.is_remediated = True
+                    active_misc.resolved_at = datetime.now(timezone.utc)
+                    retest_remediated = True
 
         # Award Gamification XP with Idempotency Key (prevents duplicate farming)
         xp_map = {1: 10, 2: 20, 3: 30, 4: 40, 5: 50}
@@ -322,6 +342,8 @@ class AssessmentEngine:
             "missing_concepts": missing_concepts,
             "misconception_detected": misconception_detected,
             "retest_remediated": retest_remediated,
+            "remediation_depth": remediation_depth,
+            "reinforcement_needed": reinforcement_needed,
             "mastery_score": updated_mastery.mastery_score,
             "confidence": updated_mastery.confidence,
             "evidence_count": updated_mastery.evidence_count,
@@ -344,6 +366,7 @@ class AssessmentEngine:
         Evaluates the student's verbal or typed explain-it-back synthesis (Feynman Technique).
         Checks accuracy, depth, and key conceptual points.
         On success, confirms genuine mastery and updates retention stage to INITIAL_MASTERY.
+        On failure, recalibrates mastery score downward and unconfirms mastery.
         """
         s_stmt = select(LearningSession).where(LearningSession.id == session_id)
         session = (await self.db.execute(s_stmt)).scalars().first()
@@ -397,6 +420,10 @@ class AssessmentEngine:
             session.lesson_phase = LessonPhase.MASTERY_CONFIRMATION.value
             session.next_recommended_action = "Review session learning gains and complete lesson"
         else:
+            # Recalibrate mastery downward on failed Feynman explanation
+            mastery_record = await self.mastery_engine.recalibrate_on_feynman_failure(
+                session.student_id, target_concept_id
+            )
             session.next_recommended_action = "Review key concept points and re-explain"
 
         event = LearningEvent(
