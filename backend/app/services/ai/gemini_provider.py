@@ -241,3 +241,51 @@ class GeminiProvider(AIProvider):
                 return json.loads(raw)
         except Exception:
             return await self.fallback.generate_candidate_questions(concept_name, concept_summary, source_text)
+
+    async def generate_strategy_explanation(
+        self,
+        concept_name: str,
+        learning_objective: str,
+        curriculum_context: str,
+        strategy: str,
+        student_name: str = "Krish",
+        prior_misconception: Optional[str] = None,
+    ) -> TutorResponse:
+        return await self.fallback.generate_strategy_explanation(
+            concept_name, learning_objective, curriculum_context, strategy, student_name, prior_misconception
+        )
+
+    async def evaluate_socratic_response(
+        self,
+        concept_name: str,
+        socratic_question: str,
+        student_response: str,
+        curriculum_context: str,
+    ) -> Dict[str, Any]:
+        return await self.fallback.evaluate_socratic_response(
+            concept_name, socratic_question, student_response, curriculum_context
+        )
+
+    async def generate_misconception_remediation(
+        self,
+        concept_name: str,
+        misconception_text: str,
+        curriculum_context: str,
+        student_name: str = "Krish",
+    ) -> TutorResponse:
+        return await self.fallback.generate_misconception_remediation(
+            concept_name, misconception_text, curriculum_context, student_name
+        )
+
+    async def evaluate_explain_it_back(
+        self,
+        concept_name: str,
+        student_explanation: str,
+        key_points: Optional[List[str]] = None,
+        curriculum_context: str = "",
+        concept_explanation: str = "",
+    ) -> Dict[str, Any]:
+        return await self.fallback.evaluate_explain_it_back(
+            concept_name, student_explanation, key_points, curriculum_context, concept_explanation
+        )
+

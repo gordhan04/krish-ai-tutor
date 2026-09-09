@@ -19,6 +19,10 @@ class LearningSession(Base):
     hint_level: Mapped[int] = mapped_column(Integer, default=0)
     starting_mastery: Mapped[float] = mapped_column(Float, default=0.0)
     ending_mastery: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pre_test_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    post_test_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    strategy_used: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    attempted_question_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     questions_attempted_count: Mapped[int] = mapped_column(Integer, default=0)
     hints_used_count: Mapped[int] = mapped_column(Integer, default=0)
     learning_gain: Mapped[float] = mapped_column(Float, default=0.0)
@@ -52,6 +56,9 @@ class ConceptMastery(Base):
     evidence_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     confidence: Mapped[str] = mapped_column(String(20), default="LOW", nullable=False)  # "LOW", "MEDIUM", "HIGH"
     difficulty_exposure: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    retention_stage: Mapped[str] = mapped_column(String(32), default="INITIAL_MASTERY", nullable=False)  # INITIAL_MASTERY, RETAINED_MASTERY
+    confirmed_mastery: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    consecutive_correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_attempts: Mapped[int] = mapped_column(Integer, default=0)
     correct_attempts: Mapped[int] = mapped_column(Integer, default=0)
     recent_accuracy: Mapped[float] = mapped_column(Float, default=0.0)
@@ -75,6 +82,7 @@ class Misconception(Base):
     evidence_quote: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     confidence_score: Mapped[float] = mapped_column(Float, default=0.85, nullable=False)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
+    remediation_attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_remediated: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     first_detected_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

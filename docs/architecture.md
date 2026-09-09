@@ -90,6 +90,13 @@
   `System Policy > Application Policy > Tutor State > Curriculum Content (Reference Data only) > Student Input`.
   Curriculum content is always wrapped in data boundaries (`<curriculum_data>`) and explicitly marked untrusted.
 
+### ADR-008: Pedagogical State Machine & Feynman Confirmation Loop (Phase C)
+- **Context:** Students can pass multiple-choice tests through recognition guessing or rote recall without deep mental models.
+- **Decision:**
+  - Enforce a 14-stage adaptive loop including explicit `DIAGNOSTIC` pre-testing, dynamic strategy selection (`FIRST_PRINCIPLES`, `WORKED_EXAMPLE`, `REAL_WORLD_ANALOGY`, `VISUAL_STEP_BY_STEP`), question deduplication, adaptive difficulty scaling, targeted misconception remediation with near-transfer retesting, and Feynman `EXPLAIN_IT_BACK` confirmation.
+  - Require explicit stopping conditions to prevent conversational drift.
+  - Compute deterministic normalized learning gain $g = (Post - Pre) / (1.0 - Pre)$ and spaced repetition schedules (1d/3d/7d/14d).
+
 ---
 
 ## 3. Directory Structure

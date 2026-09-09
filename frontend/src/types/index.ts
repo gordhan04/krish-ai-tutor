@@ -161,6 +161,7 @@ export interface LessonStartResponse {
   concept_name: string;
   learning_objective: string;
   starting_mastery: number;
+  strategy_used?: string;
   message: string;
   hint_level: number;
   suggested_replies: string[];
@@ -192,13 +193,78 @@ export interface AnswerEvaluation {
   explanation: string;
   missing_concepts: string[];
   misconception_detected?: string | null;
+  retest_remediated?: boolean;
   mastery_score: number;
   confidence?: string;
   evidence_count?: number;
+  consecutive_correct?: number;
+  retention_stage?: string;
+  comeback_bonus_awarded?: boolean;
   xp_awarded: number;
   total_xp: number;
   current_level: number;
   leveled_up: boolean;
+}
+
+export interface ExplainItBackResponse {
+  session_id: string;
+  concept_name: string;
+  score: number;
+  accurate: boolean;
+  depth: string;
+  feedback: string;
+  criteria_scores: Record<string, number>;
+  confirmed_mastery: boolean;
+  mastery_score: number;
+  retention_stage?: string;
+  xp_awarded: number;
+  next_state: string;
+  suggested_replies: string[];
+}
+
+export interface DiagnosticQuestion {
+  id: string;
+  prompt: string;
+  cognitive_level: number;
+  options: Array<{ key: string; text: string }>;
+}
+
+export interface DiagnosticStartResponse {
+  session_id: string;
+  state: string;
+  lesson_phase: string;
+  diagnostic_questions_count: number;
+  questions: DiagnosticQuestion[];
+}
+
+export interface DiagnosticEvaluateResponse {
+  session_id: string;
+  state: string;
+  lesson_phase: string;
+  pre_test_score: number;
+  selected_strategy: string;
+}
+
+export interface RemediateResponse {
+  session_id: string;
+  state: string;
+  lesson_phase: string;
+  misconception_text: string;
+  remediation_message: string;
+  suggested_replies: string[];
+}
+
+export interface MasteryCompleteResponse {
+  session_id: string;
+  state: string;
+  lesson_phase: string;
+  is_terminal: boolean;
+  concept_name: string;
+  mastery_score: number;
+  confidence: string;
+  learning_gain: number;
+  message: string;
+  next_recommended_action: string;
 }
 
 export interface ConceptMasteryReport {

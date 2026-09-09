@@ -9,6 +9,11 @@ import {
   VoiceInteractionResponse,
   CurriculumDocument,
   DocumentUploadResponse,
+  DiagnosticStartResponse,
+  DiagnosticEvaluateResponse,
+  RemediateResponse,
+  MasteryCompleteResponse,
+  ExplainItBackResponse,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
@@ -117,8 +122,40 @@ export const api = {
         body: JSON.stringify({ session_id: sessionId }),
       }
     ),
-  getPracticeQuestion: (topicId: string, conceptId: string) =>
-    fetchJSON<PracticeQuestion>(`/assessment/question?topic_id=${topicId}&concept_id=${conceptId}`),
+  socraticEvaluate: (sessionId: string, studentResponse: string) =>
+    fetchJSON<{ session_id: string; state: string; lesson_phase: string; understanding_confirmed: boolean; feedback: string; suggested_replies: string[] }>(
+      '/tutor/socratic-evaluate',
+      {
+        method: 'POST',
+        body: JSON.stringify({ session_id: sessionId, student_response: studentResponse }),
+      }
+    ),
+  startDiagnostic: (sessionId: string) =>
+    fetchJSON<DiagnosticStartResponse>('/tutor/diagnostic', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    }),
+  evaluateDiagnostic: (sessionId: string, diagnosticScore: number) =>
+    fetchJSON<DiagnosticEvaluateResponse>('/tutor/diagnostic/evaluate', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, diagnostic_score: diagnosticScore }),
+    }),
+  remediateMisconception: (sessionId: string, misconceptionId: string) =>
+    fetchJSON<RemediateResponse>('/tutor/remediate', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, misconception_id: misconceptionId }),
+    }),
+  completeSession: (sessionId: string) =>
+    fetchJSON<MasteryCompleteResponse>('/tutor/complete', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    }),
+  getPracticeQuestion: (topicId: string, conceptId: string, sessionId?: string) => {
+    const query = sessionId
+      ? `/assessment/question?topic_id=${topicId}&concept_id=${conceptId}&session_id=${sessionId}`
+      : `/assessment/question?topic_id=${topicId}&concept_id=${conceptId}`;
+    return fetchJSON<PracticeQuestion>(query);
+  },
   submitAnswer: (params: {
     questionId: string;
     studentAnswer: string;
@@ -132,6 +169,19 @@ export const api = {
         student_answer: params.studentAnswer,
         selected_option_key: params.selectedOptionKey,
         session_id: params.sessionId,
+      }),
+    }),
+  explainItBack: (params: {
+    sessionId: string;
+    studentAnswer: string;
+    conceptId?: string;
+  }) =>
+    fetchJSON<ExplainItBackResponse>('/assessment/explain-it-back', {
+      method: 'POST',
+      body: JSON.stringify({
+        session_id: params.sessionId,
+        student_answer: params.studentAnswer,
+        concept_id: params.conceptId,
       }),
     }),
   interactVoice: (params: {

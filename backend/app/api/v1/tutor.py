@@ -11,6 +11,16 @@ from app.schemas.tutor import (
     HintResponse,
     SocraticCheckRequest,
     SocraticCheckResponse,
+    SocraticEvaluateRequest,
+    SocraticEvaluateResponse,
+    DiagnosticStartRequest,
+    DiagnosticStartResponse,
+    DiagnosticEvaluateRequest,
+    DiagnosticEvaluateResponse,
+    RemediateRequest,
+    RemediateResponse,
+    MasteryCompleteRequest,
+    MasteryCompleteResponse,
 )
 
 router = APIRouter(prefix="/tutor", tags=["Tutor Engine"])
@@ -28,6 +38,7 @@ async def start_lesson(
             student_id=student.id,
             topic_id=payload.topic_id,
             concept_id=payload.concept_id,
+            strategy=payload.strategy,
         )
         return LessonStartResponse(**result)
     except Exception as e:
@@ -61,5 +72,84 @@ async def socratic_check(
     try:
         result = await engine.check_socratic_understanding(session_id=payload.session_id)
         return SocraticCheckResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/socratic-evaluate", response_model=SocraticEvaluateResponse)
+async def socratic_evaluate(
+    payload: SocraticEvaluateRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    engine = TutorEngine(db)
+    try:
+        result = await engine.evaluate_socratic_response(
+            session_id=payload.session_id,
+            student_response=payload.student_response,
+        )
+        return SocraticEvaluateResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/diagnostic", response_model=DiagnosticStartResponse)
+async def run_diagnostic(
+    payload: DiagnosticStartRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    engine = TutorEngine(db)
+    try:
+        result = await engine.run_diagnostic(session_id=payload.session_id)
+        return DiagnosticStartResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/diagnostic/evaluate", response_model=DiagnosticEvaluateResponse)
+async def evaluate_diagnostic(
+    payload: DiagnosticEvaluateRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    engine = TutorEngine(db)
+    try:
+        result = await engine.evaluate_diagnostic(
+            session_id=payload.session_id,
+            diagnostic_score=payload.diagnostic_score,
+        )
+        return DiagnosticEvaluateResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/remediate", response_model=RemediateResponse)
+async def remediate_misconception(
+    payload: RemediateRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    engine = TutorEngine(db)
+    try:
+        result = await engine.remediate_misconception(
+            session_id=payload.session_id,
+            misconception_id=payload.misconception_id,
+        )
+        return RemediateResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/complete", response_model=MasteryCompleteResponse)
+async def complete_session(
+    payload: MasteryCompleteRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    engine = TutorEngine(db)
+    try:
+        result = await engine.check_mastery_completion(session_id=payload.session_id)
+        return MasteryCompleteResponse(**result)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

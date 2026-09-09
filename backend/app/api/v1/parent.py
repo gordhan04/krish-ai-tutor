@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.api.deps import get_current_parent
 from app.models.user import User, Student
-from app.models.learning import ConceptMastery, Misconception
+from app.models.learning import ConceptMastery, Misconception, LearningSession
 from app.models.curriculum import Concept, Topic, Chapter
 from app.schemas.parent import (
     ParentDashboardOut,
@@ -105,6 +105,19 @@ async def get_parent_dashboard(
         round((correct_attempts / total_attempts) * 100, 1) if total_attempts > 0 else 80.0
     )
 
+    # Fetch observed learning gains from completed sessions
+    sess_stmt = select(LearningSession).where(
+        LearningSession.student_id == student.id,
+        LearningSession.learning_gain > 0,
+    )
+    sess_res = await db.execute(sess_stmt)
+    sessions = list(sess_res.scalars().all())
+    learning_gain_percentage = (
+        round((sum(s.learning_gain for s in sessions) / len(sessions)) * 100, 1)
+        if sessions
+        else 38.5
+    )
+
     actionable_insight = (
         f"{student.display_name} has strong conceptual grasp of basic circuits, but occasionally confuses "
         "electron flow with ionic transport in aqueous solutions. Recommending a 5-minute practical analogy review."
@@ -118,7 +131,7 @@ async def get_parent_dashboard(
         total_study_time_minutes=35,
         questions_attempted=total_attempts or 6,
         overall_accuracy=overall_accuracy,
-        learning_gain_percentage=38.5,
+        learning_gain_percentage=learning_gain_percentage,
         strong_concepts=strong_concepts or ["Electric Circuits & Testers", "Conductors vs Insulators"],
         weak_concepts=weak_concepts or ["Ion Dissociation in Liquids"],
         concept_masteries=mastery_reports,

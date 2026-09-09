@@ -11,6 +11,14 @@ class VoiceMode(str, Enum):
     EXPLAIN_IT_BACK = "explain_it_back"
 
 
+class VoiceTurnState(str, Enum):
+    IDLE = "idle"
+    LISTENING = "listening"
+    THINKING = "thinking"
+    SPEAKING = "speaking"
+    ERROR = "error"
+
+
 class VoiceInteractionRequest(BaseModel):
     session_id: str
     transcript: str
@@ -22,6 +30,7 @@ class VoiceInteractionRequest(BaseModel):
 class VoiceInteractionResponse(BaseModel):
     session_id: str
     mode: VoiceMode
+    turn_state: VoiceTurnState = VoiceTurnState.SPEAKING
     tutor_text_response: str
     audio_synthesis_instructions: Dict[str, Any]
     fallback_to_text: bool = False

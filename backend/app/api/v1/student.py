@@ -4,6 +4,7 @@ from app.core.database import get_db
 from app.api.deps import get_current_student
 from app.models.user import Student
 from app.services.gamification_engine import GamificationEngine
+from app.services.mastery_engine import MasteryEngine
 from app.schemas.student import (
     StudentDashboardOut,
     XPProgressOut,
@@ -20,6 +21,7 @@ async def get_student_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     gamification = GamificationEngine(db)
+    mastery_engine = MasteryEngine(db)
     xp_record = await gamification.get_or_create_xp(student.id)
     streak_record = await gamification.get_or_create_streak(student.id)
     mission_record = await gamification.get_or_create_daily_mission(student.id)
@@ -67,7 +69,8 @@ async def get_student_dashboard(
         xp_reward=mission_record.xp_reward,
     )
 
-    next_best_action = "Start Today's Mission: Chemical Effects of Electric Current (12 mins)"
+    next_action_data = await mastery_engine.calculate_next_best_action(student.id)
+    next_best_action = f"{next_action_data['title']} — {next_action_data['description']}"
 
     return StudentDashboardOut(
         student_id=student.id,

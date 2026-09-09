@@ -18,6 +18,10 @@ import {
   GraduationCap,
   Trophy,
   Layers,
+  Zap,
+  Award,
+  Check,
+  RotateCcw,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { createSpeechController } from '@/lib/speech';
@@ -25,6 +29,8 @@ import {
   LessonStartResponse,
   PracticeQuestion,
   AnswerEvaluation,
+  ExplainItBackResponse,
+  MasteryCompleteResponse,
 } from '@/types';
 
 const LESSON_PHASES = [
@@ -32,7 +38,7 @@ const LESSON_PHASES = [
   { id: 'EXPLANATION', label: '2. Explanation' },
   { id: 'CHECK_UNDERSTANDING', label: '3. Socratic Check' },
   { id: 'PRACTICE', label: '4. Practice' },
-  { id: 'EVALUATION', label: '5. Evaluation' },
+  { id: 'EXPLAIN_IT_BACK', label: '5. Explain-It-Back' },
   { id: 'MASTERY_CONFIRMATION', label: '6. Mastery' },
 ];
 
@@ -53,6 +59,18 @@ export default function LearnTopicPage() {
 
   // Socratic reflection response
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
+  const [socraticAnswer, setSocraticAnswer] = useState<string>('');
+  const [socraticFeedback, setSocraticFeedback] = useState<string | null>(null);
+  const [evaluatingSocratic, setEvaluatingSocratic] = useState(false);
+
+  // Explain-it-back state
+  const [explainText, setExplainText] = useState<string>('');
+  const [explainResult, setExplainResult] = useState<ExplainItBackResponse | null>(null);
+  const [submittingExplain, setSubmittingExplain] = useState(false);
+
+  // Mastery Completion state
+  const [completionResult, setCompletionResult] = useState<MasteryCompleteResponse | null>(null);
+  const [completing, setCompleting] = useState(false);
 
   // Hint ladder state
   const [hints, setHints] = useState<string[]>([]);
@@ -62,6 +80,7 @@ export default function LearnTopicPage() {
   // Voice Tutoring state
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voiceTurnState, setVoiceTurnState] = useState<'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING'>('IDLE');
   const speechControllerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -203,6 +222,65 @@ export default function LearnTopicPage() {
     }
   };
 
+  // Socratic Reflection Submission
+  const handleEvaluateSocratic = async () => {
+    if (!lesson || !socraticAnswer.trim()) return;
+    try {
+      setEvaluatingSocratic(true);
+      const res = await api.socraticEvaluate(lesson.session_id, socraticAnswer);
+      setSocraticFeedback(res.feedback);
+      if (res.understanding_confirmed) {
+        setCurrentPhase('PRACTICE');
+      }
+      if (speechControllerRef.current && res.feedback) {
+        speechControllerRef.current.speak(res.feedback);
+      }
+    } catch (err) {
+      console.error('Failed to evaluate Socratic answer:', err);
+    } finally {
+      setEvaluatingSocratic(false);
+    }
+  };
+
+  // Explain-It-Back Submission (Feynman Technique)
+  const handleExplainItBack = async () => {
+    if (!lesson || !explainText.trim()) return;
+    try {
+      setSubmittingExplain(true);
+      const res = await api.explainItBack({
+        sessionId: lesson.session_id,
+        studentAnswer: explainText,
+        conceptId: lesson.concept_id,
+      });
+      setExplainResult(res);
+      setCurrentPhase('MASTERY_CONFIRMATION');
+      if (speechControllerRef.current && res.feedback) {
+        speechControllerRef.current.speak(res.feedback);
+      }
+    } catch (err) {
+      console.error('Failed to evaluate explain-it-back:', err);
+    } finally {
+      setSubmittingExplain(false);
+    }
+  };
+
+  // Check Mastery Completion & Stopping Condition
+  const handleCompleteSession = async () => {
+    if (!lesson) return;
+    try {
+      setCompleting(true);
+      const res = await api.completeSession(lesson.session_id);
+      setCompletionResult(res);
+      if (speechControllerRef.current && res.message) {
+        speechControllerRef.current.speak(res.message);
+      }
+    } catch (err) {
+      console.error('Failed to complete session:', err);
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -238,6 +316,12 @@ export default function LearnTopicPage() {
         </Link>
 
         <div className="flex items-center gap-2">
+          {lesson.strategy_used && (
+            <span className="bg-purple-50 border border-purple-200 text-purple-800 text-xs font-extrabold px-3 py-1 rounded-full flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5 text-purple-600" />
+              Strategy: {lesson.strategy_used.replace(/_/g, ' ')}
+            </span>
+          )}
           <span className="bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-extrabold px-3 py-1 rounded-full flex items-center gap-1">
             <GraduationCap className="w-3.5 h-3.5" />
             Class 8 Science
@@ -301,19 +385,26 @@ export default function LearnTopicPage() {
             </div>
           </div>
 
-          {/* Voice Output Toggle */}
-          <button
-            onClick={handleToggleSpeak}
-            className={`p-2.5 rounded-xl border transition-colors flex items-center gap-1.5 text-xs font-bold ${
-              isSpeaking
-                ? 'bg-amber-100 border-amber-300 text-amber-900 animate-pulse'
-                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-            }`}
-            title="Read explanation out loud"
-          >
-            {isSpeaking ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-            <span className="hidden sm:inline">{isSpeaking ? 'Pause Voice' : 'Listen'}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600">
+              <span className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-amber-500 animate-ping' : isListening ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
+              <span>{isListening ? 'Listening' : isSpeaking ? 'Speaking' : 'Voice Ready'}</span>
+            </div>
+
+            {/* Voice Output Toggle */}
+            <button
+              onClick={handleToggleSpeak}
+              className={`p-2.5 rounded-xl border transition-colors flex items-center gap-1.5 text-xs font-bold ${
+                isSpeaking
+                  ? 'bg-amber-100 border-amber-300 text-amber-900 animate-pulse'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+              title="Read explanation out loud"
+            >
+              {isSpeaking ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              <span className="hidden sm:inline">{isSpeaking ? 'Pause Voice' : 'Listen'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Message Body */}
@@ -336,9 +427,44 @@ export default function LearnTopicPage() {
         )}
 
         {socraticQuestion && (
-          <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-4 text-xs text-indigo-950 font-medium space-y-1.5">
-            <span className="font-extrabold text-indigo-900 block">Socratic Reflection:</span>
-            <p className="text-sm leading-relaxed">{socraticQuestion}</p>
+          <div className="bg-indigo-50/80 border border-indigo-200 rounded-2xl p-5 text-xs text-indigo-950 font-medium space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-extrabold text-indigo-900 flex items-center gap-1.5 text-sm">
+                <Lightbulb className="w-4 h-4 text-indigo-600" />
+                Socratic Reflection Question
+              </span>
+              <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full">
+                Think & Reflect
+              </span>
+            </div>
+            <p className="text-sm font-semibold leading-relaxed text-indigo-950 bg-white/70 p-3.5 rounded-xl border border-indigo-100">
+              {socraticQuestion}
+            </p>
+
+            {!socraticFeedback ? (
+              <div className="space-y-2 pt-1">
+                <textarea
+                  rows={2}
+                  value={socraticAnswer}
+                  onChange={(e) => setSocraticAnswer(e.target.value)}
+                  placeholder="Type your reflection or answer here..."
+                  className="w-full p-3 rounded-xl border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs bg-white"
+                />
+                <button
+                  onClick={handleEvaluateSocratic}
+                  disabled={evaluatingSocratic || !socraticAnswer.trim()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <span>{evaluatingSocratic ? 'Evaluating reflection...' : 'Submit Reflection'}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
+                <span className="font-bold block text-emerald-950">Tutor Feedback:</span>
+                <p>{socraticFeedback}</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -553,16 +679,145 @@ export default function LearnTopicPage() {
                 </div>
               )}
 
+              {/* Comeback & Retest Badges */}
+              {evaluation.comeback_bonus_awarded && (
+                <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl p-3 text-xs font-bold flex items-center gap-2 shadow-sm">
+                  <Zap className="w-4 h-4 text-yellow-200" />
+                  <span>🚀 Comeback Bonus! +50 XP awarded for boosting mastery from &lt;40% to &ge;70%!</span>
+                </div>
+              )}
+              {evaluation.retest_remediated && (
+                <div className="bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-xl p-2.5 text-xs font-bold flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>✅ Misconception Successfully Overcome on Retest!</span>
+                </div>
+              )}
+
               {/* Next Action Progression */}
               <div className="pt-3 flex items-center justify-between">
                 <Link
                   href="/"
                   className="px-6 py-2.5 bg-blue-600 text-white font-extrabold text-xs rounded-xl hover:bg-blue-700 transition-colors shadow-md flex items-center gap-1.5"
                 >
-                  <span>Continue to Next Activity</span>
+                  <span>Return to Student Dashboard</span>
                   <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Feynman Technique: Explain It Back Card */}
+      {evaluation && (
+        <div className="bg-white border-2 border-emerald-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-500/20">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-base">Feynman Technique: Explain It Back</h3>
+                <span className="text-xs text-slate-400 font-medium">Explain the concept in your own words to confirm genuine mastery</span>
+              </div>
+            </div>
+            <span className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold px-3 py-1 rounded-full flex items-center gap-1">
+              <Award className="w-3.5 h-3.5" />
+              +35 XP Bonus
+            </span>
+          </div>
+
+          {!explainResult ? (
+            <div className="space-y-3">
+              <textarea
+                rows={4}
+                value={explainText}
+                onChange={(e) => setExplainText(e.target.value)}
+                placeholder={`Explain ${lesson.concept_name} clearly in your own words, including key points and how it works in real life...`}
+                className="w-full p-4 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400">
+                  💡 Teach the tutor: If you can explain it simply, you truly understand it!
+                </span>
+                <button
+                  onClick={handleExplainItBack}
+                  disabled={submittingExplain || !explainText.trim()}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <span>{submittingExplain ? 'Evaluating...' : 'Confirm Genuine Mastery'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-emerald-950 flex items-center gap-2 text-sm">
+                  <CheckCircle className="w-5 h-5 text-emerald-600" />
+                  {explainResult.accurate ? 'Mastery Scientifically Confirmed!' : 'Review & Strengthen'}
+                </span>
+                <span className="text-xs font-bold bg-white px-3 py-1 rounded-xl border border-emerald-200 text-emerald-900">
+                  Conceptual Depth: {explainResult.depth}
+                </span>
+              </div>
+              <p className="text-xs text-emerald-900 leading-relaxed">{explainResult.feedback}</p>
+              {explainResult.confirmed_mastery && (
+                <div className="flex items-center gap-2 pt-2">
+                  <span className="bg-white border border-emerald-300 text-emerald-800 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1">
+                    <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                    Retention Stage: {explainResult.retention_stage || 'INITIAL_MASTERY'}
+                  </span>
+                  <span className="bg-white border border-emerald-300 text-emerald-800 text-xs font-bold px-3 py-1 rounded-xl flex items-center gap-1">
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    +{explainResult.xp_awarded} XP Awarded
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Adaptive Stopping Condition & Goal Celebration Card */}
+      {lesson && (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl p-6 sm:p-8 text-white shadow-lg space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Trophy className="w-6 h-6 text-amber-300" />
+              <h3 className="text-lg font-black">Session Learning Goal</h3>
+            </div>
+            <span className="bg-white/20 backdrop-blur-sm text-white text-xs font-extrabold px-3 py-1 rounded-full">
+              Adaptive Stopping Condition
+            </span>
+          </div>
+
+          {completionResult ? (
+            <div className="space-y-3">
+              <p className="text-sm text-blue-50 leading-relaxed font-medium">
+                {completionResult.message}
+              </p>
+              <div className="flex items-center gap-3 pt-2">
+                <Link
+                  href="/"
+                  className="px-6 py-2.5 bg-white text-blue-700 font-extrabold text-xs rounded-xl shadow hover:bg-blue-50 transition-colors"
+                >
+                  Finish &amp; Return to Dashboard
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <p className="text-xs text-blue-100 max-w-md leading-relaxed">
+                When you have demonstrated reliable conceptual mastery, the AI tutor will complete the lesson and recommend taking a healthy rest break.
+              </p>
+              <button
+                onClick={handleCompleteSession}
+                disabled={completing}
+                className="px-5 py-2.5 bg-white text-blue-700 hover:bg-blue-50 font-bold text-xs rounded-xl shadow transition-colors shrink-0"
+              >
+                {completing ? 'Checking...' : 'Check Goal Completion'}
+              </button>
             </div>
           )}
         </div>

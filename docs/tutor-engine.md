@@ -53,14 +53,16 @@ KRISH AI TUTOR is an active educational coach, not a passive answering machine. 
 |---|---|---|
 | `IDLE` | No active session | User clicks "Start Lesson" |
 | `LESSON_START` | Initializes topic context, learning objectives, and prior mastery | Initial greeting & objective orientation |
-| `TEACHING` | Breaks concept down into bite-sized explanations using textbook chunks | Concept presented; prompt understanding check |
+| `DIAGNOSTIC` | Baseline pre-assessment before instructional delivery | Topic start; student submits pre-test |
+| `TEACHING` | Delivers strategy-guided bite-sized explanation grounded in chunks | Concept presented; prompt understanding check |
 | `CHECKING_UNDERSTANDING`| Socratic prompt ("What do you predict happens to the bulb?") | Student verbal/text reflection |
 | `PRACTICE` | Adaptive question served based on concept difficulty level | Student submits answer |
 | `EVALUATING` | Rubric scoring, missing points detection, misconception extraction | Evaluator returns structured result |
-| `REMEDIATION` | Progressive hint ladder activated upon error | Student requests hint or retries |
+| `REMEDIATION` | Targeted misconception remediation & progressive hint ladder | Evaluator detects error or misconception |
 | `RETEST` | Near-transfer question testing the same concept | Student submits new answer |
-| `MASTERY_UPDATE` | Deterministic mastery recalculation, XP awards, event logged | Ready for next concept or completion |
-| `CHAPTER_COMPLETE` | Final chapter summary, Boss Battle challenge, progress update | Session finishes |
+| `EXPLAIN_IT_BACK` | Feynman technique verification of deep understanding | Student explains concept in own words |
+| `MASTERY_UPDATE` | Deterministic mastery recalculation, XP awards, event logged | Retest or explain-it-back passed |
+| `CHAPTER_COMPLETE` | Final completion summary, learning gain report, revision scheduled | Mastery target achieved (Stopping Condition) |
 
 ---
 
@@ -92,3 +94,26 @@ All tutor decisions return typed Pydantic payloads:
   "pedagogical_intent": "introduce_electrolyte_concept"
 }
 ```
+
+---
+
+## 5. Pedagogical Strategies & Feynman Technique
+
+1. **Pedagogical Strategy Selection:** The tutor dynamically selects from 4 teaching strategies:
+   - `FIRST_PRINCIPLES`: For students with high baseline or quick mastery.
+   - `WORKED_EXAMPLE`: For students requiring procedural step-by-step guidance.
+   - `REAL_WORLD_ANALOGY`: For grounding abstract invisible concepts.
+   - `VISUAL_STEP_BY_STEP`: For multi-stage physical/chemical processes.
+2. **Feynman Technique (`EXPLAIN_IT_BACK`):**
+   - The student is prompted to explain the learned concept in their own simple words.
+   - The AI evaluates accuracy, completeness, clarity, and conceptual depth.
+   - Confirmation is required for high-retention mastery classification (`confirmed_mastery = True`).
+
+---
+
+## 6. Deterministic Stopping Condition
+
+To protect Krish's cognitive stamina and eliminate AI conversational drift, the tutor engine enforces deterministic exit criteria:
+- **Mastery Target:** Reaching concept mastery $\ge 0.85$ with `confirmed_mastery = True` immediately transitions the session to `CHAPTER_COMPLETE`.
+- **Cognitive Protection:** If Krish struggles repeatedly across 3 remediation attempts, the engine pauses active testing, issues an encouraging summary, and schedules a spaced revision.
+

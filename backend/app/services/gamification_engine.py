@@ -102,6 +102,21 @@ class GamificationEngine:
             "reason": reason,
         }
 
+    async def check_and_award_comeback_bonus(
+        self, student_id: str, concept_id: str, old_mastery: float, new_mastery: float
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Awards Comeback bonus (+50 XP) when concept mastery rises from below 40% to >= 70%.
+        """
+        if old_mastery < 0.40 and new_mastery >= 0.70:
+            return await self.award_xp(
+                student_id=student_id,
+                amount=50,
+                reason="Comeback Bonus! Boosted concept mastery from <40% to >=70%",
+                item_key=f"comeback:{student_id}:{concept_id}",
+            )
+        return None
+
     async def update_study_streak(self, student_id: str) -> Streak:
         """Updates study streak with rest-day protection."""
         streak = await self.get_or_create_streak(student_id)

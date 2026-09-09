@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from app.services.ai.base import AIProvider, TutorResponse, EvaluationResult
 
 
@@ -27,6 +27,7 @@ class MockAIProvider(AIProvider):
         return TutorResponse(
             message=message,
             pedagogical_intent="explain",
+            strategy="DIRECT_EXPLANATION",
             hint_level=0,
             suggested_quick_replies=[
                 "Tap water conducts electricity, distilled water does not.",
@@ -34,6 +35,201 @@ class MockAIProvider(AIProvider):
                 "Neither conducts electricity."
             ]
         )
+
+    async def generate_strategy_explanation(
+        self,
+        concept_name: str,
+        learning_objective: str,
+        curriculum_context: str,
+        strategy: str,
+        student_name: str = "Krish",
+        prior_misconception: str = None,
+    ) -> TutorResponse:
+        strategy_upper = strategy.upper()
+
+        if strategy_upper == "ANALOGY":
+            message = (
+                f"Hey {student_name}! To understand **{concept_name}**, let's use an analogy:\n\n"
+                f"Imagine a busy highway. In solid metal wires, electrons are like fast sports cars zooming in their lanes. "
+                f"In liquids, however, there are no loose sports cars! Instead, dissolved mineral salts split into charged 'ferry boats' called **ions**. "
+                f"These ferry boats carry the electric charge across the liquid pool.\n\n"
+                f"No ferry boats (distilled water)? No traffic flows!"
+            )
+            replies = ["The ions act like boats carrying charge.", "So pure water has no boats?"]
+        elif strategy_upper == "REAL_WORLD_EXAMPLE":
+            message = (
+                f"Let's look at an everyday example, {student_name}:\n\n"
+                f"If you ever touch electrical switches with wet hands, it is dangerous. Why? "
+                f"Pure water doesn't conduct, but our tap water and the moisture on our skin has dissolved mineral salts. "
+                f"Those tiny dissolved salts turn regular water into a conductor!"
+            )
+            replies = ["Dissolved salts make tap water conductive.", "That's why distilled water is safe?"]
+        elif strategy_upper == "STEP_BY_STEP":
+            message = (
+                f"Let's break down **{concept_name}** step by step:\n\n"
+                f"1. **Dissolution**: Solid salts (like sodium chloride) enter the liquid.\n"
+                f"2. **Ionization**: The molecules break apart into positively and negatively charged ions.\n"
+                f"3. **Conduction**: When a battery voltage is applied, positive ions move toward the negative terminal and negative ions toward the positive terminal.\n"
+                f"4. **Current Flow**: This movement of ions constitutes the electric current in liquids!"
+            )
+            replies = ["Step 1: Dissolve, Step 2: Ions, Step 3: Flow.", "What if the salt doesn't dissolve?"]
+        elif strategy_upper == "CORRECT_MISCONCEPTION":
+            misc = prior_misconception or "electrons flow through pure water"
+            message = (
+                f"Let's pause and clear up a common trap, {student_name}!\n\n"
+                f"You might have thought: *'{misc}'*. It is very natural to think that! "
+                f"In metal wires, electrons do all the moving. But in liquids, individual electrons cannot survive freely. "
+                f"Textbook Activity 11.2 proves that electric current only flows when dissolved salts produce **ions**.\n\n"
+                f"Let's remember: **Metals = Free electrons; Liquids = Dissolved ions**."
+            )
+            replies = ["Got it: Liquids use ions, not electrons.", "Can we retest this?"]
+        elif strategy_upper == "SOCRATIC":
+            message = (
+                f"Krish, let's think about **{concept_name}** together.\n\n"
+                f"When you dissolve table salt into water, what happens at the microscopic level? "
+                f"How might that allow electrical charge to move between submerged electrodes?"
+            )
+            replies = ["Salt splits into charged particles.", "I'd like a hint to think about this."]
+        elif strategy_upper == "RECAP":
+            message = (
+                f"**Quick Recap on {concept_name}**:\n"
+                f"• Pure distilled water is an insulator (poor conductor).\n"
+                f"• Adding salt, acid, or base produces charged ions.\n"
+                f"• These ions carry electric current through liquids."
+            )
+            replies = ["I understand the recap.", "Let's practice!"]
+        else:
+            resp = await self.generate_explanation(
+                concept_name=concept_name,
+                learning_objective=learning_objective,
+                curriculum_context=curriculum_context,
+                student_name=student_name,
+            )
+            resp.strategy = strategy_upper
+            return resp
+
+        return TutorResponse(
+            message=message,
+            pedagogical_intent="explain",
+            strategy=strategy_upper,
+            hint_level=0,
+            suggested_quick_replies=replies,
+        )
+
+    async def evaluate_socratic_response(
+        self,
+        concept_name: str,
+        socratic_question: str,
+        student_response: str,
+        curriculum_context: str,
+    ) -> Dict[str, Any]:
+        normalized = student_response.lower()
+        # Look for conceptual words
+        keywords = ["ion", "salt", "conduct", "acid", "glow", "flow", "yes", "current", "dissolve", "heat", "oxygen", "fire"]
+        matches = [kw for kw in keywords if kw in normalized]
+
+        if len(matches) >= 2 or ("yes" in normalized and ("ion" in normalized or "acid" in normalized)):
+            return {
+                "understanding_confirmed": True,
+                "feedback": f"Excellent reasoning! You correctly recognized how the underlying mechanism functions. Ready to test this in practice?",
+                "suggested_replies": ["Ready for practice question!", "Explain one more detail"],
+            }
+        elif len(matches) == 1:
+            return {
+                "understanding_confirmed": True,
+                "feedback": f"Good intuition! You noticed {matches[0]}. Now let's see how it applies to a standard question.",
+                "suggested_replies": ["Start practice question", "Show a hint"],
+            }
+        else:
+            return {
+                "understanding_confirmed": False,
+                "feedback": "You're exploring interesting ideas, but remember: in liquids it's the dissolved ions that carry the current. Let's look at an example before practicing.",
+                "suggested_replies": ["Show me a worked example", "Explain again"],
+            }
+
+    async def generate_misconception_remediation(
+        self,
+        concept_name: str,
+        misconception_text: str,
+        curriculum_context: str,
+        student_name: str = "Krish",
+    ) -> TutorResponse:
+        message = (
+            f"Let's untangle this concept together, {student_name}!\n\n"
+            f"You noticed: *'{misconception_text}'*.\n\n"
+            f"Here is what the textbook experiment shows: when we place a tester in distilled water, the bulb does not glow. "
+            f"The moment we add a pinch of common salt, the bulb glows brightly! "
+            f"This proves that it is the **dissolved mineral ions**, not pure water itself, that allows electricity to flow.\n\n"
+            f"Does the contrast between pure water and salt solution make sense now?"
+        )
+        return TutorResponse(
+            message=message,
+            pedagogical_intent="remediation",
+            strategy="CORRECT_MISCONCEPTION",
+            hint_level=0,
+            suggested_quick_replies=[
+                "Yes, salt ions carry the current.",
+                "Can we retest this now?",
+            ],
+        )
+
+    async def evaluate_explain_it_back(
+        self,
+        concept_name: str,
+        student_explanation: str,
+        key_points: Optional[List[str]] = None,
+        curriculum_context: str = "",
+        concept_explanation: str = "",
+    ) -> Dict[str, Any]:
+        if not key_points:
+            key_points = [
+                "Pure distilled water lacks free ions and is a poor conductor",
+                "Dissolved mineral salts dissociate into positive and negative ions",
+                "These mobile ions carry electric current through the liquid",
+            ]
+        normalized = student_explanation.lower()
+        matched = []
+        missing = []
+
+        for kp in key_points:
+            words = [w for w in re.split(r'\W+', kp.lower()) if len(w) > 3]
+            if any(w in normalized for w in words):
+                matched.append(kp)
+            else:
+                missing.append(kp)
+
+        score = round(len(matched) / max(len(key_points), 1), 2)
+        is_correct = score >= 0.50
+
+        if is_correct:
+            feedback = (
+                f"Fantastic synthesis in your own words, Krish! 🌟 You explained {len(matched)} key points accurately. "
+                + (f"For perfection on exams, don't forget: {missing[0]}." if missing else "Your explanation shows solid conceptual mastery!")
+            )
+            depth = "DEEP" if score >= 0.80 else "SOLID"
+        else:
+            feedback = (
+                f"Good effort trying to explain it back! You're on the right track, but some detail is missing: "
+                f"remember to explain {', '.join(missing[:2])}."
+            )
+            depth = "SURFACE"
+
+        return {
+            "score": score,
+            "accurate": is_correct,
+            "depth": depth,
+            "feedback": feedback,
+            "criteria_scores": {
+                "accuracy": score,
+                "completeness": round(score * 0.9, 2),
+                "clarity": 1.0 if is_correct else 0.5,
+            },
+            "suggested_replies": [
+                "Review my learning gain",
+                "Try another challenge",
+                "Finish lesson",
+            ],
+        }
 
     async def generate_socratic_check(
         self,

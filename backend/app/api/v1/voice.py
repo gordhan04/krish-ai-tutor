@@ -9,6 +9,7 @@ from app.services.audio_service import (
     VoiceInteractionRequest,
     VoiceInteractionResponse,
     VoiceMode,
+    VoiceTurnState,
     StandardWebSpeechTTS,
 )
 
@@ -41,21 +42,21 @@ async def voice_interact(
 
         elif payload.mode == VoiceMode.SOCRATIC:
             # Student verbally answered Socratic check
-            tutor_message = f"That's a thoughtful reflection! You said: '{payload.transcript}'. Now let's try a practice question to test this concept."
-            next_mode = VoiceMode.QUIZ
+            eval_res = await tutor_engine.evaluate_socratic_response(
+                session_id=payload.session_id,
+                student_response=payload.transcript,
+            )
+            tutor_message = eval_res["feedback"]
+            next_mode = VoiceMode.QUIZ if eval_res.get("understanding_confirmed") else VoiceMode.TEACH
 
         elif payload.mode == VoiceMode.EXPLAIN_IT_BACK:
-            # Student explains concept in own words verbally (Part 6)
-            if payload.question_id:
-                eval_res = await assessment_engine.evaluate_answer(
-                    student_id=student.id,
-                    question_id=payload.question_id,
-                    student_answer=payload.transcript,
-                    session_id=payload.session_id,
-                )
-                tutor_message = eval_res["feedback"]
-            else:
-                tutor_message = f"Great verbal explanation! You covered key ideas well. I recorded this towards your concept mastery."
+            # Student explains concept in own words verbally (Feynman Technique)
+            eval_res = await assessment_engine.evaluate_explain_it_back(
+                session_id=payload.session_id,
+                student_answer=payload.transcript,
+                concept_id=payload.concept_id,
+            )
+            tutor_message = eval_res["feedback"]
             next_mode = VoiceMode.TEACH
 
         elif payload.mode == VoiceMode.QUIZ and payload.question_id:
@@ -76,6 +77,7 @@ async def voice_interact(
         return VoiceInteractionResponse(
             session_id=payload.session_id,
             mode=payload.mode,
+            turn_state=VoiceTurnState.SPEAKING,
             tutor_text_response=tutor_message,
             audio_synthesis_instructions=synth_instructions,
             fallback_to_text=False,
@@ -89,6 +91,7 @@ async def voice_interact(
         return VoiceInteractionResponse(
             session_id=payload.session_id,
             mode=payload.mode,
+            turn_state=VoiceTurnState.ERROR,
             tutor_text_response=fallback_msg,
             audio_synthesis_instructions=synth_instructions,
             fallback_to_text=True,
