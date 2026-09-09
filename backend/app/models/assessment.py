@@ -16,6 +16,8 @@ class Question(Base):
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
     source_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(50), default="textbook_exercise")  # textbook_exercise, generated_practice
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True)
 
     concept: Mapped["Concept"] = relationship("Concept", back_populates="questions")
     options: Mapped[List["QuestionOption"]] = relationship("QuestionOption", back_populates="question", cascade="all, delete-orphan")

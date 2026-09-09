@@ -31,8 +31,9 @@ class Settings(BaseSettings):
     VECTOR_SEARCH_TOP_K: int = 4
     VECTOR_SIMILARITY_THRESHOLD: float = 0.60
 
-    # File storage
+    # File storage & uploads
     UPLOAD_DIR: str = "./uploads"
+    MAX_UPLOAD_SIZE_MB: int = 50
 
     model_config = SettingsConfigDict(
         env_file=".env",

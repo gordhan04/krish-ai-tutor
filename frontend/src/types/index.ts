@@ -3,6 +3,7 @@ export interface Concept {
   name: string;
   summary: string;
   difficulty_tier: number;
+  status?: string;
 }
 
 export interface LearningObjective {
@@ -15,6 +16,7 @@ export interface Topic {
   id: string;
   title: string;
   order_index: number;
+  status?: string;
   concepts: Concept[];
   learning_objectives: LearningObjective[];
 }
@@ -23,6 +25,7 @@ export interface Section {
   id: string;
   section_number: string;
   title: string;
+  status?: string;
   topics: Topic[];
 }
 
@@ -31,7 +34,52 @@ export interface Chapter {
   chapter_number: number;
   title: string;
   description?: string;
+  status?: string;
   sections: Section[];
+}
+
+export interface CurriculumDocumentMetrics {
+  sections_count?: number;
+  topics_count?: number;
+  concepts_count?: number;
+  chunks_count?: number;
+  questions_count?: number;
+  embeddings_count?: number;
+}
+
+export interface CurriculumDocument {
+  id: string;
+  original_filename: string;
+  file_size: number;
+  mime_type: string;
+  status:
+    | 'UPLOADED'
+    | 'VALIDATING'
+    | 'EXTRACTING'
+    | 'STRUCTURING'
+    | 'CHUNKING'
+    | 'EMBEDDING'
+    | 'GENERATING_CONTENT'
+    | 'READY_FOR_REVIEW'
+    | 'REVIEWED'
+    | 'PUBLISHED'
+    | 'FAILED'
+    | 'OCR_REQUIRED';
+  processing_stage: string;
+  page_count: number;
+  warnings?: string | null;
+  error_message?: string | null;
+  created_at: string;
+  metrics?: CurriculumDocumentMetrics | null;
+}
+
+export interface DocumentUploadResponse {
+  document_id: string;
+  filename: string;
+  status: string;
+  message: string;
+  content_hash: string;
+  is_duplicate: boolean;
 }
 
 export interface Book {

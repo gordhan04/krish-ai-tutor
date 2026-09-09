@@ -60,3 +60,27 @@ class AIProvider(ABC):
         curriculum_context: str,
     ) -> TutorResponse:
         pass
+
+    @abstractmethod
+    async def generate_embeddings(
+        self,
+        texts: List[str],
+    ) -> List[List[float]]:
+        pass
+
+    @abstractmethod
+    async def extract_concepts_and_objectives(
+        self,
+        topic_title: str,
+        topic_text: str,
+    ) -> Dict[str, Any]:
+        pass
+
+    @abstractmethod
+    async def generate_candidate_questions(
+        self,
+        concept_name: str,
+        concept_summary: str,
+        source_text: str,
+    ) -> List[Dict[str, Any]]:
+        pass

@@ -143,3 +143,98 @@ class MockAIProvider(AIProvider):
             hint_level=clamped_level,
             suggested_quick_replies=["I get it now! Let me answer.", "Could you explain the ions part again?"]
         )
+
+    async def generate_embeddings(
+        self,
+        texts: List[str],
+    ) -> List[List[float]]:
+        import hashlib
+        import math
+
+        embeddings = []
+        dim = 768
+        for text in texts:
+            # Deterministic pseudo-embedding based on text tokens and hashing
+            vec = [0.0] * dim
+            words = re.findall(r'\w+', text.lower())
+            for i, word in enumerate(words):
+                h = int(hashlib.md5(word.encode()).hexdigest(), 16)
+                idx = h % dim
+                vec[idx] += 1.0 / (1.0 + (i * 0.05))
+
+            norm = math.sqrt(sum(x * x for x in vec))
+            if norm > 0:
+                vec = [round(x / norm, 5) for x in vec]
+            else:
+                vec = [1.0 / math.sqrt(dim)] * dim
+            embeddings.append(vec)
+        return embeddings
+
+    async def extract_concepts_and_objectives(
+        self,
+        topic_title: str,
+        topic_text: str,
+    ) -> Dict[str, Any]:
+        # Deterministic extraction of key concepts from text
+        sentences = [s.strip() for s in re.split(r'[.!?]+', topic_text) if len(s.strip()) > 20]
+        concept_name = topic_title
+        summary = sentences[0] if sentences else f"Core principles of {topic_title}."
+        if len(sentences) > 1:
+            summary += " " + sentences[1]
+
+        return {
+            "concepts": [
+                {
+                    "name": concept_name,
+                    "summary": summary[:400],
+                    "difficulty_tier": 2,
+                }
+            ],
+            "learning_objectives": [
+                {
+                    "statement": f"Understand and explain the principles of {topic_title} as described in the textbook.",
+                    "bloom_taxonomy_level": "Understanding",
+                }
+            ],
+        }
+
+    async def generate_candidate_questions(
+        self,
+        concept_name: str,
+        concept_summary: str,
+        source_text: str,
+    ) -> List[Dict[str, Any]]:
+        return [
+            {
+                "question_type": "mcq",
+                "cognitive_level": 2,
+                "prompt": f"Based on the concept of '{concept_name}', what is the primary takeaway?",
+                "explanation": f"According to the curriculum: {concept_summary[:200]}",
+                "source_type": "generated_practice",
+                "options": [
+                    {"option_key": "A", "option_text": f"{concept_name} plays a key functional role in the process.", "is_correct": True, "feedback": "Correct! Directly grounded in the lesson."},
+                    {"option_key": "B", "option_text": f"{concept_name} has no effect on the reaction.", "is_correct": False, "feedback": "Incorrect. The textbook demonstrates the opposite."},
+                    {"option_key": "C", "option_text": "The process occurs only in absolute zero conditions.", "is_correct": False, "feedback": "Incorrect."},
+                    {"option_key": "D", "option_text": "None of the above.", "is_correct": False, "feedback": "Incorrect."}
+                ]
+            },
+            {
+                "question_type": "rubric_explanation",
+                "cognitive_level": 3,
+                "prompt": f"In your own words, explain how '{concept_name}' operates, citing an example from your textbook.",
+                "explanation": f"Students should state: {concept_summary[:200]}",
+                "source_type": "generated_practice",
+                "rubric": {
+                    "expected_concepts": [concept_name, "scientific mechanism", "textbook observation"],
+                    "required_points": [
+                        f"Defines {concept_name} correctly.",
+                        "Explains how conditions affect the phenomenon.",
+                    ],
+                    "misconception_traps": {
+                        "spontaneous": f"Believing {concept_name} occurs without any energy transfer or interaction.",
+                        "solids": f"Confusing the state of matter involved in {concept_name}."
+                    },
+                    "max_score": 1.0
+                }
+            }
+        ]

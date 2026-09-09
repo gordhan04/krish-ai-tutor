@@ -67,18 +67,19 @@ The KRISH AI TUTOR database is designed for PostgreSQL + `pgvector` with support
 - **`streaks`**: `student_id` (PK, FK), `current_streak`, `longest_streak`, `last_study_date`, `grace_days_left`.
 - **`daily_missions`**: `id`, `student_id`, `date`, `title`, `target_concepts_count`, `target_questions_count`, `target_weak_remedies_count`, `is_completed`.
 
-### Curriculum Hierarchy
+### Curriculum Hierarchy & Ingestion
+- **`curriculum_documents`**: `id` (UUID), `original_filename`, `storage_path`, `content_hash` (SHA-256), `file_size`, `mime_type`, `page_count`, `status` (`UPLOADED`, `VALIDATING`, `EXTRACTING`, `STRUCTURING`, `CHUNKING`, `EMBEDDING`, `GENERATING_CONTENT`, `READY_FOR_REVIEW`, `REVIEWED`, `PUBLISHED`, `FAILED`, `OCR_REQUIRED`), `processing_stage`, `warnings`, `error_message`, `metrics_json`, `created_at`, `updated_at`.
 - **`subjects`**: `id`, `name` ("Science", "Mathematics"), `icon`, `grade_level` (8).
 - **`books`**: `id`, `subject_id`, `title` ("NCERT Science Class 8"), `publisher`, `publication_year`.
-- **`chapters`**: `id`, `book_id`, `chapter_number` (e.g. 11), `title` ("Chemical Effects of Electric Current"), `description`.
-- **`sections`**: `id`, `chapter_id`, `section_number` ("11.1"), `title` ("Do Liquids Conduct Electricity?").
-- **`topics`**: `id`, `section_id`, `title` ("Conductors and Insulators in Liquids"), `order_index`.
-- **`concepts`**: `id`, `topic_id`, `name` ("Electrolytes and Ion Dissociation"), `summary`, `difficulty_tier`.
+- **`chapters`**: `id`, `book_id`, `chapter_number` (e.g. 11), `title` ("Chemical Effects of Electric Current"), `description`, `status` (`DRAFT`, `REVIEWED`, `PUBLISHED`).
+- **`sections`**: `id`, `chapter_id`, `section_number` ("11.1"), `title` ("Do Liquids Conduct Electricity?"), `status` (`DRAFT`, `REVIEWED`, `PUBLISHED`).
+- **`topics`**: `id`, `section_id`, `title` ("Conductors and Insulators in Liquids"), `order_index`, `status` (`DRAFT`, `REVIEWED`, `PUBLISHED`).
+- **`concepts`**: `id`, `topic_id`, `name` ("Electrolytes and Ion Dissociation"), `summary`, `difficulty_tier`, `status` (`DRAFT`, `REVIEWED`, `PUBLISHED`).
 - **`learning_objectives`**: `id`, `topic_id`, `concept_id`, `statement`, `bloom_taxonomy_level`.
-- **`content_chunks`**: `id`, `book_id`, `chapter_id`, `topic_id`, `concept_id`, `page_number`, `content_type` (`text`, `definition`, `example`, `experiment`), `chunk_text`, `embedding` (vector(1536)).
+- **`content_chunks`**: `id`, `document_id`, `book_id`, `chapter_id`, `section_id`, `topic_id`, `concept_id`, `page_number`, `page_start`, `page_end`, `heading_path`, `content_type` (`definition`, `experiment`, `explanation`, `example`, `table`, `summary`, `exercise`), `chunk_text`, `status` (`DRAFT`, `REVIEWED`, `PUBLISHED`), `embedding` (vector(1536)).
 
 ### Questions & Rubrics
-- **`questions`**: `id`, `concept_id`, `topic_id`, `question_type` (`mcq`, `true_false`, `short_answer`, `rubric_explanation`), `cognitive_level` (`recall`, `understanding`, `application`, `reasoning`, `challenge`), `prompt`, `explanation`, `source_page`.
+- **`questions`**: `id`, `concept_id`, `topic_id`, `question_type` (`mcq`, `true_false`, `short_answer`, `rubric_explanation`), `cognitive_level` (`recall`, `understanding`, `application`, `reasoning`, `challenge`), `prompt`, `explanation`, `source_page`, `source_type` (`textbook_exercise`, `generated_practice`), `is_published` (Boolean).
 - **`question_options`**: `id`, `question_id`, `option_key` ("A", "B", "C", "D"), `option_text`, `is_correct`, `feedback`.
 - **`question_rubrics`**: `id`, `question_id`, `expected_concepts` (JSON list), `required_points` (JSON list), `misconception_traps` (JSON dict), `max_score`.
 

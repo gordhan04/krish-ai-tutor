@@ -14,6 +14,7 @@ class BenchmarkQuery(BaseModel):
 
 
 CLASS_8_SCIENCE_BENCHMARK: List[BenchmarkQuery] = [
+    # Chapter 11: Chemical Effects of Electric Current
     BenchmarkQuery(
         query="Does tap water conduct electric current?",
         expected_topic_title="Conductors and Insulators in Liquids",
@@ -32,6 +33,25 @@ CLASS_8_SCIENCE_BENCHMARK: List[BenchmarkQuery] = [
         expected_concept_name="Electrolytes & Ionic Conductivity",
         expected_keywords=["free of salts", "poor conductor", "distilled"],
     ),
+    # Chapter 4: Combustion and Flame
+    BenchmarkQuery(
+        query="What is combustion and what is produced during the chemical reaction?",
+        expected_topic_title="Combustion",
+        expected_concept_name="Combustion",
+        expected_keywords=["chemical process", "oxygen", "heat"],
+    ),
+    BenchmarkQuery(
+        query="What is ignition temperature and why does a matchstick catch fire on friction?",
+        expected_topic_title="Combustion",
+        expected_concept_name="Ignition Temperature",
+        expected_keywords=["lowest temperature", "ignition", "catches fire"],
+    ),
+    BenchmarkQuery(
+        query="How does carbon dioxide extinguish electrical fires?",
+        expected_topic_title="Control Fire",
+        expected_concept_name="Fire",
+        expected_keywords=["carbon dioxide", "blanket", "oxygen"],
+    ),
 ]
 
 
@@ -45,21 +65,41 @@ class RAGEvaluator:
         self.db = db
         self.retriever = CurriculumRetriever(db)
 
-    async def run_benchmark(self) -> Dict[str, Any]:
+    async def run_benchmark(self, filter_available_topics: bool = True) -> Dict[str, Any]:
         results = []
         successful_retrievals = 0
         relevant_chunks_found = 0
-
-        # Resolve Topic and Concept IDs
-        t_res = await self.db.execute(select(Topic))
-        topic = t_res.scalars().first()
-        if not topic:
-            return {"error": "Curriculum not seeded"}
-
-        c_res = await self.db.execute(select(Concept).where(Concept.topic_id == topic.id))
-        concept = c_res.scalars().first()
+        evaluated_queries = 0
 
         for item in CLASS_8_SCIENCE_BENCHMARK:
+            # Dynamically resolve topic
+            stmt = select(Topic).where(Topic.title.ilike(f"%{item.expected_topic_title}%"))
+            t_res = await self.db.execute(stmt)
+            topic = t_res.scalars().first()
+
+            if not topic:
+                if filter_available_topics:
+                    continue  # Topic from chapter not seeded in this instance
+                results.append({
+                    "query": item.query,
+                    "status": "topic_not_seeded",
+                    "chunks_retrieved_count": 0,
+                    "matched_keywords": [],
+                    "is_relevant": False,
+                })
+                evaluated_queries += 1
+                continue
+
+            evaluated_queries += 1
+
+            c_res = await self.db.execute(
+                select(Concept).where(
+                    Concept.topic_id == topic.id,
+                    Concept.name.ilike(f"%{item.expected_concept_name}%")
+                )
+            )
+            concept = c_res.scalars().first()
+
             chunks = await self.retriever.get_topic_chunks(
                 topic_id=topic.id,
                 concept_id=concept.id if concept else None,
@@ -81,15 +121,19 @@ class RAGEvaluator:
 
             results.append({
                 "query": item.query,
+                "topic": topic.title,
+                "concept": concept.name if concept else None,
                 "chunks_retrieved_count": len(chunks),
                 "matched_keywords": matched_keywords,
                 "is_relevant": is_relevant,
             })
 
-        total_queries = len(CLASS_8_SCIENCE_BENCHMARK)
+        if evaluated_queries == 0:
+            return {"error": "Curriculum not seeded"}
+
         return {
-            "total_benchmark_queries": total_queries,
-            "retrieval_success_rate": round(successful_retrievals / total_queries, 2),
-            "top_k_relevance_rate": round(relevant_chunks_found / total_queries, 2),
+            "total_benchmark_queries": evaluated_queries,
+            "retrieval_success_rate": round(successful_retrievals / evaluated_queries, 2),
+            "top_k_relevance_rate": round(relevant_chunks_found / evaluated_queries, 2),
             "results": results,
         }

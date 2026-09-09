@@ -38,6 +38,7 @@ class Chapter(Base):
     chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")  # DRAFT, REVIEWED, PUBLISHED
 
     book: Mapped["Book"] = relationship("Book", back_populates="chapters")
     sections: Mapped[List["Section"]] = relationship("Section", back_populates="chapter", cascade="all, delete-orphan")
@@ -51,6 +52,7 @@ class Section(Base):
     chapter_id: Mapped[str] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
     section_number: Mapped[str] = mapped_column(String(20), default="1.0")
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")
 
     chapter: Mapped["Chapter"] = relationship("Chapter", back_populates="sections")
     topics: Mapped[List["Topic"]] = relationship("Topic", back_populates="section", cascade="all, delete-orphan")
@@ -63,6 +65,7 @@ class Topic(Base):
     section_id: Mapped[str] = mapped_column(String(36), ForeignKey("sections.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")
 
     section: Mapped["Section"] = relationship("Section", back_populates="topics")
     concepts: Mapped[List["Concept"]] = relationship("Concept", back_populates="topic", cascade="all, delete-orphan")
@@ -77,6 +80,7 @@ class Concept(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     difficulty_tier: Mapped[int] = mapped_column(Integer, default=2)  # 1 to 5
+    status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")
 
     topic: Mapped["Topic"] = relationship("Topic", back_populates="concepts")
     questions: Mapped[List["Question"]] = relationship("Question", back_populates="concept")
@@ -95,18 +99,52 @@ class LearningObjective(Base):
     topic: Mapped["Topic"] = relationship("Topic", back_populates="learning_objectives")
 
 
+class CurriculumDocument(Base):
+    __tablename__ = "curriculum_documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), default="application/pdf")
+    status: Mapped[str] = mapped_column(String(32), default="UPLOADED", index=True)
+    # Statuses: UPLOADED, VALIDATING, EXTRACTING, STRUCTURING, CHUNKING, EMBEDDING, GENERATING_CONTENT, READY_FOR_REVIEW, PUBLISHED, FAILED, OCR_REQUIRED
+    processing_stage: Mapped[str] = mapped_column(String(50), default="upload")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    warnings: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    uploader_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    subject_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True)
+    book_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("books.id", ondelete="SET NULL"), nullable=True)
+    chapter_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True)
+    metrics_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    subject: Mapped[Optional["Subject"]] = relationship("Subject")
+    book: Mapped[Optional["Book"]] = relationship("Book")
+    chapter: Mapped[Optional["Chapter"]] = relationship("Chapter")
+    chunks: Mapped[List["ContentChunk"]] = relationship("ContentChunk", back_populates="document")
+
+
 class ContentChunk(Base):
     __tablename__ = "content_chunks"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     book_id: Mapped[str] = mapped_column(String(36), ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
     chapter_id: Mapped[str] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
+    section_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("sections.id", ondelete="SET NULL"), nullable=True)
     topic_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
     concept_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("concepts.id", ondelete="SET NULL"), nullable=True)
+    document_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("curriculum_documents.id", ondelete="SET NULL"), nullable=True)
     page_number: Mapped[int] = mapped_column(Integer, default=1)
-    content_type: Mapped[str] = mapped_column(String(50), default="text")  # definition, explanation, example, experiment
+    content_type: Mapped[str] = mapped_column(String(50), default="text")  # definition, explanation, example, experiment, table, exercise, summary
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")  # DRAFT, REVIEWED, PUBLISHED
     embedding: Mapped[Optional[List[float]]] = mapped_column(PortableVector, nullable=True)
 
     chapter: Mapped["Chapter"] = relationship("Chapter", back_populates="chunks")
+    section: Mapped[Optional["Section"]] = relationship("Section")
     concept: Mapped[Optional["Concept"]] = relationship("Concept", back_populates="chunks")
+    document: Mapped[Optional["CurriculumDocument"]] = relationship("CurriculumDocument", back_populates="chunks")

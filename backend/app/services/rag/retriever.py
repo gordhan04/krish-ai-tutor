@@ -53,7 +53,7 @@ class CurriculumRetriever:
         """
         stmt = (
             select(ContentChunk)
-            .where(ContentChunk.topic_id == topic_id)
+            .where(ContentChunk.topic_id == topic_id, ContentChunk.status == "PUBLISHED")
             .options(selectinload(ContentChunk.concept), selectinload(ContentChunk.chapter))
         )
         if concept_id:
@@ -66,7 +66,7 @@ class CurriculumRetriever:
             # Fallback to topic-level chunks if concept-specific chunks are sparse
             fallback_stmt = (
                 select(ContentChunk)
-                .where(ContentChunk.topic_id == topic_id)
+                .where(ContentChunk.topic_id == topic_id, ContentChunk.status == "PUBLISHED")
                 .options(selectinload(ContentChunk.concept), selectinload(ContentChunk.chapter))
             )
             fb_result = await self.db.execute(fallback_stmt)

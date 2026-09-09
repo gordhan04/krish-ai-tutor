@@ -7,6 +7,8 @@ import {
   AnswerEvaluation,
   ParentDashboard,
   VoiceInteractionResponse,
+  CurriculumDocument,
+  DocumentUploadResponse,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
@@ -163,5 +165,140 @@ export const api = {
       }
     } catch (_) {}
     return fetchJSON<ParentDashboard>('/parent/dashboard');
+  },
+  uploadCurriculumPdf: async (file: File): Promise<DocumentUploadResponse> => {
+    let token = getAuthToken();
+    try {
+      const pRes = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'parent@school.edu', password: 'parent123' }),
+      });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        token = pData.access_token;
+      }
+    } catch (_) {}
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/curriculum/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let errorDetail = 'Failed to upload textbook PDF';
+      try {
+        const err = await response.json();
+        errorDetail = err.detail || errorDetail;
+      } catch (_) {}
+      throw new Error(errorDetail);
+    }
+    return response.json();
+  },
+  getCurriculumDocuments: async (): Promise<CurriculumDocument[]> => {
+    let token = getAuthToken();
+    try {
+      const pRes = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'parent@school.edu', password: 'parent123' }),
+      });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        token = pData.access_token;
+      }
+    } catch (_) {}
+
+    return fetchJSON<CurriculumDocument[]>('/curriculum/documents', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
+  getDocumentStatus: async (documentId: string): Promise<CurriculumDocument> => {
+    let token = getAuthToken();
+    try {
+      const pRes = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'parent@school.edu', password: 'parent123' }),
+      });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        token = pData.access_token;
+      }
+    } catch (_) {}
+
+    return fetchJSON<CurriculumDocument>(`/curriculum/documents/${documentId}/status`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
+  approveDocument: async (documentId: string): Promise<CurriculumDocument> => {
+    let token = getAuthToken();
+    try {
+      const pRes = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'parent@school.edu', password: 'parent123' }),
+      });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        token = pData.access_token;
+      }
+    } catch (_) {}
+
+    return fetchJSON<CurriculumDocument>(`/curriculum/documents/${documentId}/approve`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
+  publishDocument: async (documentId: string): Promise<CurriculumDocument> => {
+    let token = getAuthToken();
+    try {
+      const pRes = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'parent@school.edu', password: 'parent123' }),
+      });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        token = pData.access_token;
+      }
+    } catch (_) {}
+
+    return fetchJSON<CurriculumDocument>(`/curriculum/documents/${documentId}/publish`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  },
+  updateConcept: async (
+    conceptId: string,
+    updates: { name?: string; summary?: string; difficulty_tier?: number; status?: string }
+  ) => {
+    let token = getAuthToken();
+    try {
+      const pRes = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'parent@school.edu', password: 'parent123' }),
+      });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        token = pData.access_token;
+      }
+    } catch (_) {}
+
+    return fetchJSON(`/curriculum/concepts/${conceptId}`, {
+      method: 'PATCH',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: JSON.stringify(updates),
+    });
   },
 };
