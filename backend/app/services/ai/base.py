@@ -1,0 +1,62 @@
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
+
+
+class EvaluationResult(BaseModel):
+    score: float = Field(ge=0.0, le=1.0, description="Score between 0.0 and 1.0")
+    is_correct: bool = Field(description="True if student achieved threshold score")
+    missing_concepts: List[str] = Field(default_factory=list, description="Crucial concepts omitted")
+    misconception_detected: Optional[str] = Field(default=None, description="Identified misconception pattern if any")
+    detailed_feedback: str = Field(description="Educational feedback tailored for Class 8 student")
+    recommended_action: str = Field(description="advance, retry_with_hint, or reinforce")
+
+
+class TutorResponse(BaseModel):
+    message: str = Field(description="Tutor conversational explanation or prompt")
+    pedagogical_intent: str = Field(description="Intent: explain, socratic_check, practice, hint, remediation")
+    hint_level: int = Field(default=0, ge=0, le=5)
+    suggested_quick_replies: List[str] = Field(default_factory=list)
+
+
+class AIProvider(ABC):
+    @abstractmethod
+    async def generate_explanation(
+        self,
+        concept_name: str,
+        learning_objective: str,
+        curriculum_context: str,
+        student_name: str = "Krish",
+    ) -> TutorResponse:
+        pass
+
+    @abstractmethod
+    async def generate_socratic_check(
+        self,
+        concept_name: str,
+        curriculum_context: str,
+        prior_explanation: str,
+    ) -> TutorResponse:
+        pass
+
+    @abstractmethod
+    async def evaluate_student_answer(
+        self,
+        question_prompt: str,
+        student_answer: str,
+        expected_concepts: List[str],
+        required_points: List[str],
+        misconception_traps: Dict[str, str],
+        curriculum_context: str,
+    ) -> EvaluationResult:
+        pass
+
+    @abstractmethod
+    async def generate_hint(
+        self,
+        question_prompt: str,
+        student_previous_attempts: List[str],
+        hint_level: int,
+        curriculum_context: str,
+    ) -> TutorResponse:
+        pass
