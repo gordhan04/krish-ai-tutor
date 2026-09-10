@@ -28,18 +28,20 @@ ALLOWED_TRANSITIONS: Dict[TutorState, Set[TutorState]] = {
     TutorState.DIAGNOSTIC: {TutorState.TEACHING, TutorState.PRACTICE},
     TutorState.TEACHING: {TutorState.DIAGNOSTIC, TutorState.CHECKING_UNDERSTANDING, TutorState.PRACTICE, TutorState.MASTERY_REVIEW},
     TutorState.CHECKING_UNDERSTANDING: {TutorState.TEACHING, TutorState.PRACTICE, TutorState.REMEDIATION, TutorState.EXPLAIN_IT_BACK},
-    TutorState.PRACTICE: {TutorState.EVALUATING, TutorState.REMEDIATION, TutorState.EXPLAIN_IT_BACK, TutorState.MASTERY_REVIEW, TutorState.TEACHING},
-    TutorState.EVALUATING: {TutorState.MASTERY_REVIEW, TutorState.REMEDIATION, TutorState.PRACTICE, TutorState.EXPLAIN_IT_BACK, TutorState.CHAPTER_COMPLETE},
-    TutorState.REMEDIATION: {TutorState.RETEST, TutorState.PRACTICE, TutorState.TEACHING, TutorState.EXPLAIN_IT_BACK},
-    TutorState.RETEST: {TutorState.EVALUATING, TutorState.REMEDIATION, TutorState.PRACTICE},
-    TutorState.EXPLAIN_IT_BACK: {TutorState.EVALUATING, TutorState.MASTERY_REVIEW, TutorState.CHAPTER_COMPLETE, TutorState.PRACTICE},
-    TutorState.MASTERY_REVIEW: {TutorState.TEACHING, TutorState.PRACTICE, TutorState.CHAPTER_COMPLETE, TutorState.IDLE},
+    TutorState.PRACTICE: {TutorState.EVALUATING, TutorState.REMEDIATION, TutorState.EXPLAIN_IT_BACK, TutorState.MASTERY_REVIEW, TutorState.TEACHING, TutorState.CHECKING_UNDERSTANDING},
+    TutorState.EVALUATING: {TutorState.MASTERY_REVIEW, TutorState.REMEDIATION, TutorState.PRACTICE, TutorState.EXPLAIN_IT_BACK, TutorState.CHAPTER_COMPLETE, TutorState.CHECKING_UNDERSTANDING},
+    TutorState.REMEDIATION: {TutorState.RETEST, TutorState.PRACTICE, TutorState.TEACHING, TutorState.EXPLAIN_IT_BACK, TutorState.CHECKING_UNDERSTANDING},
+    TutorState.RETEST: {TutorState.EVALUATING, TutorState.REMEDIATION, TutorState.PRACTICE, TutorState.CHECKING_UNDERSTANDING},
+    TutorState.EXPLAIN_IT_BACK: {TutorState.EVALUATING, TutorState.MASTERY_REVIEW, TutorState.CHAPTER_COMPLETE, TutorState.PRACTICE, TutorState.CHECKING_UNDERSTANDING, TutorState.TEACHING},
+    TutorState.MASTERY_REVIEW: {TutorState.TEACHING, TutorState.PRACTICE, TutorState.CHAPTER_COMPLETE, TutorState.IDLE, TutorState.CHECKING_UNDERSTANDING},
     TutorState.CHAPTER_COMPLETE: {TutorState.IDLE, TutorState.LESSON_START},
 }
 
 
 def validate_transition(current_state: TutorState, next_state: TutorState) -> bool:
     """Validates if transition between tutor states is permissible."""
+    if current_state == next_state:
+        return True
     allowed = ALLOWED_TRANSITIONS.get(current_state, set())
     if next_state not in allowed:
         raise StateTransitionError(

@@ -57,3 +57,5 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 .DS_Store
+curiosity.pdf
+backend/tests/fixtures/curiosity.pdf

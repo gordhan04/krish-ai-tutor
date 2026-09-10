@@ -10,6 +10,8 @@ from app.models.curriculum import (
     LearningObjective,
     ContentChunk,
     CurriculumDocument,
+    CurriculumActivity,
+    CurriculumFigure,
 )
 from app.models.assessment import Question, QuestionOption, QuestionRubric
 from app.models.learning import (
@@ -33,6 +35,8 @@ __all__ = [
     "LearningObjective",
     "ContentChunk",
     "CurriculumDocument",
+    "CurriculumActivity",
+    "CurriculumFigure",
     "Question",
     "QuestionOption",
     "QuestionRubric",

@@ -166,6 +166,10 @@ class AssessmentEngine:
                     if is_correct
                     else f"Not quite. {matched_option.feedback or question.explanation}"
                 )
+                if not is_correct and question.rubric and question.rubric.misconception_traps:
+                    traps = question.rubric.misconception_traps
+                    if isinstance(traps, dict) and traps:
+                        misconception_detected = next(iter(traps.values()))
             else:
                 feedback = "Option not recognized. Please pick A, B, C, or D."
         else:
@@ -216,6 +220,7 @@ class AssessmentEngine:
 
         # Handle Misconception Logging and Targeted Retest Resolution
         retest_remediated = False
+        active_misc_record = None
         if misconception_detected:
             misc_stmt = select(Misconception).where(
                 Misconception.student_id == student_id,
@@ -228,6 +233,7 @@ class AssessmentEngine:
                 existing_misc.occurrence_count += 1
                 existing_misc.last_detected_at = datetime.now(timezone.utc)
                 existing_misc.is_remediated = False
+                active_misc_record = existing_misc
             else:
                 new_misc = Misconception(
                     student_id=student_id,
@@ -238,6 +244,8 @@ class AssessmentEngine:
                     last_detected_at=datetime.now(timezone.utc),
                 )
                 self.db.add(new_misc)
+                await self.db.flush()
+                active_misc_record = new_misc
         elif is_correct:
             # Retest check: only resolve if question is cognitive_level >= 3 (Application/Reasoning)
             # OR question rubric explicitly targets misconception traps
@@ -268,35 +276,36 @@ class AssessmentEngine:
             item_key=f"question:{student_id}:{question_id}",
         )
 
-        # Check and Award Comeback Bonus (+50 XP if mastery rose from < 40% to >= 70%)
-        comeback_info = await self.gamification_engine.check_and_award_comeback_bonus(
-            student_id=student_id,
-            concept_id=question.concept_id,
-            old_mastery=old_mastery_score,
-            new_mastery=updated_mastery.mastery_score,
-        )
-        comeback_bonus_awarded = comeback_info is not None and comeback_info.get("awarded_xp", 0) > 0
-
-        # Update Daily Mission
-        await self.gamification_engine.increment_mission_progress(
-            student_id=student_id,
-            question_answered=True,
-            weak_remedied=bool(is_correct and updated_mastery.mastery_score >= 0.70),
-        )
-
-        # Update Session Metrics and Attempt Tracking
+        # Handle Session State and Attempts Update
+        comeback_bonus_awarded = False
+        session = None
         if session_id:
             s_stmt = select(LearningSession).where(LearningSession.id == session_id)
             s_res = await self.db.execute(s_stmt)
             session = s_res.scalars().first()
             if session:
-                # Record question in attempted set
+                session.questions_attempted_count += 1
                 attempted = list(session.attempted_question_ids or [])
                 if question_id not in attempted:
                     attempted.append(question_id)
                     session.attempted_question_ids = attempted
 
-                session.questions_attempted_count += 1
+                # Check Comeback Bonus: Student got 2+ incorrect in a row, now answers correctly
+                curr_incorrect = getattr(session, "consecutive_incorrect_count", 0)
+                if is_correct and curr_incorrect >= 2:
+                    comeback_bonus_awarded = True
+                    await self.gamification_engine.award_xp(
+                        student_id=student_id,
+                        amount=50,
+                        reason="Comeback Bonus: Mastered challenging problem after struggle",
+                        item_key=f"comeback:{session_id}:{question_id}",
+                    )
+                    setattr(session, "consecutive_incorrect_count", 0)
+                elif not is_correct:
+                    setattr(session, "consecutive_incorrect_count", curr_incorrect + 1)
+                else:
+                    setattr(session, "consecutive_incorrect_count", 0)
+
                 session.ending_mastery = updated_mastery.mastery_score
                 session.learning_gain = round(session.ending_mastery - session.starting_mastery, 2)
 
@@ -334,6 +343,10 @@ class AssessmentEngine:
 
         total_awarded_xp = xp_info["awarded_xp"] + (50 if comeback_bonus_awarded else 0)
 
+        s_state = session.state if session_id and session else None
+        s_phase = session.lesson_phase if session_id and session else None
+        detected_miscs = [{"id": active_misc_record.id, "text": misconception_detected}] if active_misc_record else []
+
         return {
             "is_correct": is_correct,
             "score": score,
@@ -341,6 +354,9 @@ class AssessmentEngine:
             "explanation": question.explanation,
             "missing_concepts": missing_concepts,
             "misconception_detected": misconception_detected,
+            "detected_misconceptions": detected_miscs,
+            "state": s_state,
+            "lesson_phase": s_phase,
             "retest_remediated": retest_remediated,
             "remediation_depth": remediation_depth,
             "reinforcement_needed": reinforcement_needed,
@@ -355,6 +371,27 @@ class AssessmentEngine:
             "current_level": xp_info["current_level"],
             "leveled_up": xp_info["leveled_up"],
         }
+
+    async def submit_answer(
+        self,
+        session_id: str,
+        question_id: str,
+        selected_option_key: Optional[str] = None,
+        student_answer: str = "",
+        time_spent_seconds: int = 15,
+    ) -> Dict[str, Any]:
+        """Convenience method to evaluate answer for a learning session."""
+        s_stmt = select(LearningSession).where(LearningSession.id == session_id)
+        session = (await self.db.execute(s_stmt)).scalars().first()
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        return await self.evaluate_answer(
+            student_id=session.student_id,
+            question_id=question_id,
+            student_answer=student_answer or selected_option_key or "",
+            selected_option_key=selected_option_key,
+            session_id=session_id,
+        )
 
     async def evaluate_explain_it_back(
         self,

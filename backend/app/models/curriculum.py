@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import String, Integer, Text, ForeignKey, DateTime
+from sqlalchemy import String, Integer, Text, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base, PortableVector
 
@@ -39,10 +39,17 @@ class Chapter(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")  # DRAFT, REVIEWED, PUBLISHED
+    pdf_page_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pdf_page_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    printed_page_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    printed_page_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_sequence: Mapped[int] = mapped_column(Integer, default=0)
 
     book: Mapped["Book"] = relationship("Book", back_populates="chapters")
     sections: Mapped[List["Section"]] = relationship("Section", back_populates="chapter", cascade="all, delete-orphan")
     chunks: Mapped[List["ContentChunk"]] = relationship("ContentChunk", back_populates="chapter")
+    activities: Mapped[List["CurriculumActivity"]] = relationship("CurriculumActivity", back_populates="chapter", cascade="all, delete-orphan")
+    figures: Mapped[List["CurriculumFigure"]] = relationship("CurriculumFigure", back_populates="chapter", cascade="all, delete-orphan")
 
 
 class Section(Base):
@@ -53,9 +60,16 @@ class Section(Base):
     section_number: Mapped[str] = mapped_column(String(20), default="1.0")
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")
+    start_pdf_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    end_pdf_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    start_printed_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    end_printed_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_sequence: Mapped[int] = mapped_column(Integer, default=0)
 
     chapter: Mapped["Chapter"] = relationship("Chapter", back_populates="sections")
     topics: Mapped[List["Topic"]] = relationship("Topic", back_populates="section", cascade="all, delete-orphan")
+    activities: Mapped[List["CurriculumActivity"]] = relationship("CurriculumActivity", back_populates="section", cascade="all, delete-orphan")
+    figures: Mapped[List["CurriculumFigure"]] = relationship("CurriculumFigure", back_populates="section", cascade="all, delete-orphan")
 
 
 class Topic(Base):
@@ -119,6 +133,12 @@ class CurriculumDocument(Base):
     book_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("books.id", ondelete="SET NULL"), nullable=True)
     chapter_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True)
     metrics_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    part: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    grade_level: Mapped[int] = mapped_column(Integer, default=8)
+    document_scope: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    printed_page_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    printed_page_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    validation_results: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -139,7 +159,12 @@ class ContentChunk(Base):
     concept_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("concepts.id", ondelete="SET NULL"), nullable=True)
     document_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("curriculum_documents.id", ondelete="SET NULL"), nullable=True)
     page_number: Mapped[int] = mapped_column(Integer, default=1)
-    content_type: Mapped[str] = mapped_column(String(50), default="text")  # definition, explanation, example, experiment, table, exercise, summary
+    pdf_page_number: Mapped[int] = mapped_column(Integer, default=1)
+    printed_page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    heading_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    parent_block_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    content_type: Mapped[str] = mapped_column(String(50), default="text")  # definition, explanation, example, experiment, table, exercise, summary, activity, figure, front_matter
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="PUBLISHED")  # DRAFT, REVIEWED, PUBLISHED
     embedding: Mapped[Optional[List[float]]] = mapped_column(PortableVector, nullable=True)
@@ -148,3 +173,39 @@ class ContentChunk(Base):
     section: Mapped[Optional["Section"]] = relationship("Section")
     concept: Mapped[Optional["Concept"]] = relationship("Concept", back_populates="chunks")
     document: Mapped[Optional["CurriculumDocument"]] = relationship("CurriculumDocument", back_populates="chunks")
+
+
+class CurriculumActivity(Base):
+    __tablename__ = "curriculum_activities"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    chapter_id: Mapped[str] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
+    section_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("sections.id", ondelete="SET NULL"), nullable=True)
+    activity_number: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g. "Activity 1.1"
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_observation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    safety_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pdf_page: Mapped[int] = mapped_column(Integer, default=1)
+    printed_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_sequence: Mapped[int] = mapped_column(Integer, default=0)
+
+    chapter: Mapped["Chapter"] = relationship("Chapter", back_populates="activities")
+    section: Mapped[Optional["Section"]] = relationship("Section", back_populates="activities")
+
+
+class CurriculumFigure(Base):
+    __tablename__ = "curriculum_figures"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    chapter_id: Mapped[str] = mapped_column(String(36), ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False)
+    section_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("sections.id", ondelete="SET NULL"), nullable=True)
+    figure_number: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g. "Fig. 1.1(a)"
+    caption: Mapped[str] = mapped_column(Text, nullable=False)
+    image_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    pdf_page: Mapped[int] = mapped_column(Integer, default=1)
+    printed_page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source_sequence: Mapped[int] = mapped_column(Integer, default=0)
+
+    chapter: Mapped["Chapter"] = relationship("Chapter", back_populates="figures")
+    section: Mapped[Optional["Section"]] = relationship("Section", back_populates="figures")

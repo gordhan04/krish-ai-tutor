@@ -113,3 +113,27 @@ class MasteryCompleteResponse(BaseModel):
     learning_gain: float
     message: str
     next_recommended_action: str
+
+
+class SessionPauseResponse(BaseModel):
+    session_id: str
+    state: str
+    concept_name: str
+    status: str
+    message: str
+    next_recommended_action: str
+
+
+class StudentFeedbackRequest(BaseModel):
+    session_id: str
+    rating: str
+    notes: Optional[str] = ""
+    topic_id: Optional[str] = None
+
+
+class StudentFeedbackResponse(BaseModel):
+    success: bool
+    session_id: str
+    rating: str
+    message: str
+

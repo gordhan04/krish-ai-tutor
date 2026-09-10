@@ -26,6 +26,10 @@ export interface Section {
   section_number: string;
   title: string;
   status?: string;
+  pdf_page_start?: number | null;
+  pdf_page_end?: number | null;
+  printed_page_start?: number | null;
+  printed_page_end?: number | null;
   topics: Topic[];
 }
 
@@ -35,6 +39,10 @@ export interface Chapter {
   title: string;
   description?: string;
   status?: string;
+  pdf_page_start?: number | null;
+  pdf_page_end?: number | null;
+  printed_page_start?: number | null;
+  printed_page_end?: number | null;
   sections: Section[];
 }
 
@@ -45,6 +53,43 @@ export interface CurriculumDocumentMetrics {
   chunks_count?: number;
   questions_count?: number;
   embeddings_count?: number;
+}
+
+export interface DocumentScope {
+  type: string;
+  part?: string;
+  subject?: string;
+  grade?: number;
+  [key: string]: any;
+}
+
+export interface ValidationResults {
+  document_summary?: {
+    total_physical_pages: number;
+    front_matter_pages: number;
+    content_pages: number;
+    total_chapters: number;
+    total_sections: number;
+    total_activities: number;
+    total_figures: number;
+    total_chunks: number;
+    printed_page_range: string;
+    physical_page_range: string;
+    page_offset: number;
+    is_non_contiguous: boolean;
+    missing_chapters: number[];
+  };
+  structural_integrity?: {
+    non_contiguous_status: string;
+    front_matter_isolated: boolean;
+  };
+  metrics?: {
+    activities_extracted: number;
+    figures_extracted: number;
+    sections_extracted: number;
+    chunks_created: number;
+  };
+  [key: string]: any;
 }
 
 export interface CurriculumDocument {
@@ -71,6 +116,99 @@ export interface CurriculumDocument {
   error_message?: string | null;
   created_at: string;
   metrics?: CurriculumDocumentMetrics | null;
+  part?: string | null;
+  grade_level?: number;
+  document_scope?: DocumentScope | null;
+  printed_page_start?: number | null;
+  printed_page_end?: number | null;
+  validation_results?: ValidationResults | null;
+}
+
+export interface ChunkDetail {
+  id: string;
+  content_type: string;
+  chunk_text: string;
+  page_number: number;
+  pdf_page_number: number;
+  printed_page_number?: number | null;
+  source_sequence: number;
+  heading_path?: string | null;
+  chapter_id: string;
+  chapter_title?: string | null;
+  section_id?: string | null;
+  section_title?: string | null;
+  status: string;
+  prev_chunk_text?: string | null;
+  next_chunk_text?: string | null;
+}
+
+export interface ActivityEntity {
+  id: string;
+  activity_number: string;
+  title: string;
+  instructions: string;
+  expected_observation?: string | null;
+  safety_notes?: string | null;
+  pdf_page: number;
+  printed_page?: number | null;
+  source_sequence: number;
+  section_id?: string | null;
+}
+
+export interface FigureEntity {
+  id: string;
+  figure_number: string;
+  caption: string;
+  image_reference?: string | null;
+  pdf_page: number;
+  printed_page?: number | null;
+  source_sequence: number;
+  section_id?: string | null;
+}
+
+export interface ChapterEntities {
+  chapter_id: string;
+  activities: ActivityEntity[];
+  figures: FigureEntity[];
+}
+
+export interface DocumentIntegrityReport {
+  document_id: string;
+  filename: string;
+  status: string;
+  healthy: boolean;
+  total_physical_pages: number;
+  printed_page_range: string;
+  chunks_count: number;
+  embeddings_count: number;
+  missing_embeddings_count: number;
+  orphan_chunks_in_doc: number;
+  global_orphan_chunks: number;
+  invalid_pdf_page_references: number;
+  invalid_printed_page_references: number;
+  details?: Record<string, any> | null;
+}
+
+export interface RAGQueryRequest {
+  query: string;
+  document_id?: string | null;
+  chapter_id?: string | null;
+  section_id?: string | null;
+  allow_document_fallback?: boolean;
+  include_front_matter?: boolean;
+  limit?: number;
+}
+
+export interface RAGQueryResponse {
+  grounded: boolean;
+  source_available: boolean;
+  reason?: string | null;
+  citations: string[];
+  formatted_context: string;
+  chunks_count: number;
+  provenance_errors: string[];
+  debug_metadata?: Record<string, any> | null;
+  chunks: ChunkDetail[];
 }
 
 export interface DocumentUploadResponse {

@@ -1,7 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.state_machine import StateTransitionError
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, engine, Base
@@ -476,6 +478,18 @@ app.include_router(assessment.router, prefix=settings.API_V1_STR)
 app.include_router(student_api.router, prefix=settings.API_V1_STR)
 app.include_router(parent_api.router, prefix=settings.API_V1_STR)
 app.include_router(voice_api.router, prefix=settings.API_V1_STR)
+
+
+@app.exception_handler(StateTransitionError)
+async def state_transition_error_handler(request: Request, exc: StateTransitionError):
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "INVALID_LEARNING_STATE",
+            "detail": str(exc),
+            "message": "The requested action is not valid for the current lesson state.",
+        },
+    )
 
 
 @app.get("/health")

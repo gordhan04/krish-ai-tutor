@@ -2,7 +2,7 @@ import hashlib
 import os
 import re
 import uuid
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict, Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.curriculum import CurriculumDocument
@@ -80,3 +80,62 @@ class DocumentValidator:
         stmt = select(CurriculumDocument).where(CurriculumDocument.content_hash == content_hash)
         res = await db.execute(stmt)
         return res.scalars().first()
+
+
+class CurriculumQualityValidator:
+    """
+    Performs comprehensive post-ingestion document validation:
+    - Physical vs content vs front matter page counts
+    - Chapter sequence and non-contiguous chapter classification
+    - Dual page mapping validation
+    - Entity counts (activities, figures, sections, chunks)
+    - Structural confidence level
+    """
+
+    @classmethod
+    def validate_document_quality(
+        cls,
+        total_physical_pages: int,
+        front_matter_pages: int,
+        chapters: List[Any],
+        chunks: List[Any],
+        activities_count: int,
+        figures_count: int,
+        toc_entries_count: int,
+        page_offset: int,
+        page_mapping_confidence: str,
+        total_sections: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        ch_numbers = [c.chapter_number for c in chapters]
+        is_contiguous = ch_numbers == list(range(min(ch_numbers), max(ch_numbers) + 1)) if ch_numbers else True
+        missing_numbers = sorted(list(set(range(min(ch_numbers), max(ch_numbers) + 1)) - set(ch_numbers))) if ch_numbers else []
+
+        volume_status = "VALID NON-CONTIGUOUS VOLUME" if not is_contiguous else "VALID CONTIGUOUS VOLUME"
+
+        # Quality passes
+        if total_sections is None:
+            total_sections = sum(len(getattr(c, "sections", [])) for c in chapters if "sections" in getattr(c, "__dict__", {}))
+        section_pass = total_sections > 0 or len(chapters) > 0
+        page_mapping_pass = page_offset > 0 or total_physical_pages < 10
+        chunking_pass = len(chunks) >= (total_physical_pages - front_matter_pages)
+
+        report = {
+            "physical_pages": total_physical_pages,
+            "front_matter_pages": front_matter_pages,
+            "content_pages": total_physical_pages - front_matter_pages,
+            "expected_chapters_from_toc": toc_entries_count if toc_entries_count > 0 else len(chapters),
+            "detected_chapters_count": len(chapters),
+            "chapter_numbers": ch_numbers,
+            "missing_chapter_numbers": missing_numbers,
+            "non_contiguous_status": volume_status,
+            "section_detection": "PASS" if section_pass else "FAIL",
+            "page_mapping": "PASS" if page_mapping_pass else "WARNING",
+            "page_offset": page_offset,
+            "page_mapping_confidence": page_mapping_confidence,
+            "activities_detected": activities_count,
+            "figures_detected": figures_count,
+            "total_sections": total_sections,
+            "chunks_count": len(chunks),
+            "status": "READY_FOR_REVIEW",
+        }
+        return report

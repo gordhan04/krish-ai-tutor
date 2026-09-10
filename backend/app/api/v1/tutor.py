@@ -21,6 +21,17 @@ from app.schemas.tutor import (
     RemediateResponse,
     MasteryCompleteRequest,
     MasteryCompleteResponse,
+    SessionPauseResponse,
+    StudentFeedbackRequest,
+    StudentFeedbackResponse,
+)
+from app.schemas.practice import (
+    PracticeStartRequest,
+    PracticeStartResponse,
+    PracticeAnswerRequest,
+    PracticeAnswerResponse,
+    ExplainItBackRequest,
+    ExplainItBackResponse,
 )
 
 router = APIRouter(prefix="/tutor", tags=["Tutor Engine"])
@@ -193,3 +204,104 @@ async def resume_session(
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/session/pause/{session_id}", response_model=SessionPauseResponse)
+async def pause_session(
+    session_id: str,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_session_ownership(session_id, student.id, db)
+    engine = TutorEngine(db)
+    try:
+        result = await engine.pause_session(session_id=session_id)
+        return SessionPauseResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/feedback", response_model=StudentFeedbackResponse)
+async def submit_feedback(
+    payload: StudentFeedbackRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_session_ownership(payload.session_id, student.id, db)
+    engine = TutorEngine(db)
+    try:
+        result = await engine.record_student_feedback(
+            session_id=payload.session_id,
+            student_id=student.id,
+            rating=payload.rating,
+            notes=payload.notes,
+        )
+        return StudentFeedbackResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/practice/start", response_model=PracticeStartResponse)
+async def start_practice(
+    payload: PracticeStartRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_session_ownership(payload.session_id, student.id, db)
+    engine = TutorEngine(db)
+    try:
+        result = await engine.select_practice_question(session_id=payload.session_id)
+        return PracticeStartResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/practice/answer", response_model=PracticeAnswerResponse)
+async def answer_practice(
+    payload: PracticeAnswerRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_session_ownership(payload.session_id, student.id, db)
+    engine = TutorEngine(db)
+    try:
+        result = await engine.record_practice_answer(
+            session_id=payload.session_id,
+            question_id=payload.question_id,
+            answer=payload.answer,
+            request_id=payload.request_id,
+        )
+        return PracticeAnswerResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/explain-it-back", response_model=ExplainItBackResponse)
+async def explain_it_back(
+    payload: ExplainItBackRequest,
+    student: Student = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_session_ownership(payload.session_id, student.id, db)
+    engine = TutorEngine(db)
+    try:
+        result = await engine.evaluate_explain_it_back(
+            session_id=payload.session_id,
+            response=payload.response,
+            request_id=payload.request_id,
+        )
+        return ExplainItBackResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+

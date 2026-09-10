@@ -299,3 +299,99 @@ class MasteryEngine:
             "concept_id": None,
             "reason": "Daily curriculum milestone.",
         }
+
+    async def calculate_chapter_mastery(
+        self, student_id: str, chapter_id: str
+    ) -> Dict[str, Any]:
+        """
+        Calculates evidence-weighted chapter mastery derived from all concept masteries in the chapter:
+        ChapterMastery = sum(w_i * M_i) / sum(w_i), where w_i = min(evidence_count_i, 5) * tier_i
+        """
+        from app.models.curriculum import Section, Topic, Concept
+
+        stmt = (
+            select(Concept)
+            .join(Topic, Concept.topic_id == Topic.id)
+            .join(Section, Topic.section_id == Section.id)
+            .where(Section.chapter_id == chapter_id)
+        )
+        res = await self.db.execute(stmt)
+        concepts = list(res.scalars().all())
+
+        if not concepts:
+            return {
+                "chapter_id": chapter_id,
+                "overall_mastery": 0.0,
+                "confidence": "LOW",
+                "concepts_count": 0,
+                "mastered_concepts_count": 0,
+                "is_chapter_mastered": False,
+                "concept_breakdowns": [],
+            }
+
+        concept_ids = [c.id for c in concepts]
+        m_stmt = select(ConceptMastery).where(
+            ConceptMastery.student_id == student_id,
+            ConceptMastery.concept_id.in_(concept_ids),
+        )
+        m_res = await self.db.execute(m_stmt)
+        mastery_by_concept = {m.concept_id: m for m in m_res.scalars().all()}
+
+        total_weight = 0.0
+        weighted_mastery_sum = 0.0
+        mastered_count = 0
+        total_evidence = 0
+        concept_breakdowns = []
+
+        for concept in concepts:
+            m = mastery_by_concept.get(concept.id)
+            score = m.mastery_score if m else 0.0
+            evidence = m.evidence_count if m else 0
+            conf = m.confidence if m else "LOW"
+            retention = m.retention_stage if m else "EXPOSURE"
+            tier = concept.difficulty_tier or 2
+
+            w_i = max(1.0, float(min(evidence, 5) * tier)) if evidence > 0 else 1.0
+            total_weight += w_i
+            weighted_mastery_sum += w_i * score
+            total_evidence += evidence
+
+            if score >= 0.70:
+                mastered_count += 1
+
+            concept_breakdowns.append({
+                "concept_id": concept.id,
+                "concept_name": concept.name,
+                "difficulty_tier": tier,
+                "mastery_score": score,
+                "evidence_count": evidence,
+                "confidence": conf,
+                "retention_stage": retention,
+            })
+
+        overall_mastery = round(weighted_mastery_sum / total_weight, 2) if total_weight > 0 else 0.0
+
+        avg_evidence = total_evidence / len(concepts) if concepts else 0
+        if avg_evidence < 2.0:
+            overall_confidence = "LOW"
+        elif avg_evidence <= 4.0:
+            overall_confidence = "MEDIUM"
+        else:
+            overall_confidence = "HIGH"
+
+        is_chapter_mastered = (
+            overall_mastery >= 0.75
+            and mastered_count >= int(0.70 * len(concepts))
+            and overall_confidence in ["MEDIUM", "HIGH"]
+        )
+
+        return {
+            "chapter_id": chapter_id,
+            "overall_mastery": overall_mastery,
+            "confidence": overall_confidence,
+            "concepts_count": len(concepts),
+            "mastered_concepts_count": mastered_count,
+            "is_chapter_mastered": is_chapter_mastered,
+            "concept_breakdowns": concept_breakdowns,
+        }
+

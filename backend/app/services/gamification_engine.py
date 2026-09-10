@@ -172,12 +172,17 @@ class GamificationEngine:
         mission = result.scalars().first()
 
         if not mission:
+            from app.models.curriculum import Chapter
+            ch_stmt = select(Chapter).order_by(Chapter.chapter_number.asc())
+            first_ch = (await self.db.execute(ch_stmt)).scalars().first()
+            ch_title = first_ch.title if first_ch else "Crop Production and Management"
+
             mission = DailyMission(
                 student_id=student_id,
                 mission_date=today,
-                title="Master Chemical Effects of Electric Current",
+                title=f"Master {ch_title}",
                 subject_name="Science",
-                chapter_name="Chemical Effects of Electric Current",
+                chapter_name=ch_title,
                 target_concepts_count=2,
                 completed_concepts_count=0,
                 target_questions_count=5,

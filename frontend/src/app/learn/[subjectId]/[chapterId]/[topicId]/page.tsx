@@ -22,6 +22,7 @@ import {
   Award,
   Check,
   RotateCcw,
+  Clock,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { createSpeechController } from '@/lib/speech';
@@ -56,6 +57,25 @@ export default function LearnTopicPage() {
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [textAnswer, setTextAnswer] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+  const [isFetchingQuestion, setIsFetchingQuestion] = useState(false);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+
+  // Helper to strictly synchronize UI state from backend response
+  const syncLessonState = (resp: any) => {
+    if (!resp) return;
+    if (resp.lesson_phase) {
+      setCurrentPhase(resp.lesson_phase);
+    } else if (resp.state) {
+      if (resp.state === 'TEACHING') setCurrentPhase('EXPLANATION');
+      else if (resp.state === 'CHECKING_UNDERSTANDING') setCurrentPhase('CHECK_UNDERSTANDING');
+      else if (resp.state === 'PRACTICE') setCurrentPhase('PRACTICE');
+      else if (resp.state === 'EXPLAIN_IT_BACK') setCurrentPhase('EXPLAIN_IT_BACK');
+      else if (resp.state === 'MASTERY_REVIEW' || resp.state === 'CHAPTER_COMPLETE') setCurrentPhase('MASTERY_CONFIRMATION');
+    }
+    if (lesson && resp.state) {
+      setLesson((prev) => (prev ? { ...prev, state: resp.state, lesson_phase: resp.lesson_phase || prev.lesson_phase } : prev));
+    }
+  };
 
   // Socratic reflection response
   const [socraticQuestion, setSocraticQuestion] = useState<string | null>(null);
@@ -81,7 +101,18 @@ export default function LearnTopicPage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceTurnState, setVoiceTurnState] = useState<'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING'>('IDLE');
+  const [voiceFallbackNotice, setVoiceFallbackNotice] = useState<string | null>(null);
   const speechControllerRef = useRef<any>(null);
+
+  // Session Pause & Resume state
+  const [isPaused, setIsPaused] = useState(false);
+  const [pauseInfo, setPauseInfo] = useState<{ concept_name: string; message: string } | null>(null);
+  const [pausing, setPausing] = useState(false);
+
+  // Student Feedback state
+  const [feedbackRating, setFeedbackRating] = useState<string | null>(null);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState<boolean>(false);
+  const [submittingFeedback, setSubmittingFeedback] = useState<boolean>(false);
 
   useEffect(() => {
     speechControllerRef.current = createSpeechController();
@@ -93,6 +124,42 @@ export default function LearnTopicPage() {
     };
   }, []);
 
+  const handlePauseSession = async () => {
+    if (!lesson) return;
+    try {
+      setPausing(true);
+      if (speechControllerRef.current) {
+        speechControllerRef.current.stopSpeaking();
+        speechControllerRef.current.stopListening();
+      }
+      const res = await api.pauseSession(lesson.session_id);
+      setPauseInfo({ concept_name: res.concept_name, message: res.message });
+      setIsPaused(true);
+    } catch (err: any) {
+      console.error('Failed to pause session:', err);
+    } finally {
+      setPausing(false);
+    }
+  };
+
+  const handleSendFeedback = async (rating: string) => {
+    if (!lesson) return;
+    try {
+      setSubmittingFeedback(true);
+      setFeedbackRating(rating);
+      await api.submitStudentFeedback({
+        sessionId: lesson.session_id,
+        rating,
+        topicId,
+      });
+      setFeedbackSubmitted(true);
+    } catch (err) {
+      console.error('Failed to submit student feedback:', err);
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  };
+
   // Load lesson & practice question
   useEffect(() => {
     async function initLesson() {
@@ -101,11 +168,26 @@ export default function LearnTopicPage() {
         setLoading(true);
         const lessonData = await api.startLesson(topicId);
         setLesson(lessonData);
-        setCurrentPhase(lessonData.lesson_phase || 'EXPLANATION');
+        syncLessonState(lessonData);
 
-        // Fetch adaptive practice question for concept
-        const qData = await api.getPracticeQuestion(topicId, lessonData.concept_id, lessonData.session_id);
-        setQuestion(qData);
+        // Fetch adaptive practice question for concept via startPractice
+        try {
+          const pData = await api.startPractice(lessonData.session_id);
+          setQuestion({
+            id: pData.current_question_id,
+            concept_id: pData.concept_id,
+            topic_id: topicId,
+            question_type: (pData.question_type as any) || 'mcq',
+            cognitive_level: pData.bloom_level || 2,
+            prompt: pData.question_prompt,
+            source_page: pData.source_page,
+            options: (pData.options as any) || [],
+          });
+        } catch (qErr) {
+          // Fallback to assessment question endpoint
+          const qData = await api.getPracticeQuestion(topicId, lessonData.concept_id, lessonData.session_id);
+          setQuestion(qData);
+        }
       } catch (err: any) {
         console.error('Failed to start lesson:', err);
       } finally {
@@ -165,14 +247,16 @@ export default function LearnTopicPage() {
   const handleTriggerSocratic = async () => {
     if (!lesson) return;
     try {
+      setErrorNotice(null);
       const res = await api.checkSocratic(lesson.session_id);
       setSocraticQuestion(res.socratic_question);
-      setCurrentPhase('CHECK_UNDERSTANDING');
+      syncLessonState(res);
       if (speechControllerRef.current) {
         speechControllerRef.current.speak(res.socratic_question);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to trigger Socratic check:', err);
+      setErrorNotice(err.message || 'Failed to trigger Socratic check');
     }
   };
 
@@ -181,42 +265,46 @@ export default function LearnTopicPage() {
     if (!lesson || !question) return;
     try {
       setRequestingHint(true);
+      setErrorNotice(null);
       const res = await api.getHint(lesson.session_id, question.prompt);
       setHints((prev) => [...prev, res.hint_message]);
       setCurrentHintLevel(res.hint_level);
       if (speechControllerRef.current) {
         speechControllerRef.current.speak(res.hint_message);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to get hint:', err);
+      setErrorNotice(err.message || 'Failed to get hint');
     } finally {
       setRequestingHint(false);
     }
   };
 
-  // Answer Submission
+  // Answer Submission (via unified tutor practice endpoint)
   const handleSubmitAnswer = async () => {
     if (!question || !lesson) return;
-    const answerToSubmit = question.question_type === 'mcq' ? '' : textAnswer;
+    const answerToSubmit = question.question_type === 'mcq' ? selectedOption : textAnswer;
     if (question.question_type === 'mcq' && !selectedOption) return;
     if (question.question_type !== 'mcq' && !textAnswer.trim()) return;
 
     try {
       setSubmitting(true);
-      const evalResult = await api.submitAnswer({
-        questionId: question.id,
-        studentAnswer: answerToSubmit,
-        selectedOptionKey: selectedOption,
+      setErrorNotice(null);
+      const evalResult = await api.answerPractice({
         sessionId: lesson.session_id,
+        questionId: question.id,
+        answer: answerToSubmit,
+        requestId: `ans_${question.id}_${Date.now()}`,
       });
       setEvaluation(evalResult);
-      setCurrentPhase('EVALUATION');
+      syncLessonState(evalResult);
 
-      if (speechControllerRef.current) {
+      if (speechControllerRef.current && evalResult.feedback) {
         speechControllerRef.current.speak(evalResult.feedback);
       }
     } catch (err: any) {
       console.error('Failed to submit answer:', err);
+      setErrorNotice(err.message || 'Failed to submit answer');
     } finally {
       setSubmitting(false);
     }
@@ -227,38 +315,56 @@ export default function LearnTopicPage() {
     if (!lesson || !socraticAnswer.trim()) return;
     try {
       setEvaluatingSocratic(true);
+      setErrorNotice(null);
       const res = await api.socraticEvaluate(lesson.session_id, socraticAnswer);
       setSocraticFeedback(res.feedback);
-      if (res.understanding_confirmed) {
-        setCurrentPhase('PRACTICE');
-      }
+      syncLessonState(res);
       if (speechControllerRef.current && res.feedback) {
         speechControllerRef.current.speak(res.feedback);
       }
-    } catch (err) {
+      // If practice phase unlocked, fetch practice question
+      if (res.understanding_confirmed) {
+        try {
+          const pData = await api.startPractice(lesson.session_id);
+          setQuestion({
+            id: pData.current_question_id,
+            concept_id: pData.concept_id,
+            topic_id: topicId,
+            question_type: (pData.question_type as any) || 'mcq',
+            cognitive_level: pData.bloom_level || 2,
+            prompt: pData.question_prompt,
+            source_page: pData.source_page,
+            options: (pData.options as any) || [],
+          });
+        } catch (_) {}
+      }
+    } catch (err: any) {
       console.error('Failed to evaluate Socratic answer:', err);
+      setErrorNotice(err.message || 'Failed to evaluate Socratic answer');
     } finally {
       setEvaluatingSocratic(false);
     }
   };
 
-  // Explain-It-Back Submission (Feynman Technique)
+  // Explain-It-Back Submission (Feynman Technique via Tutor endpoint)
   const handleExplainItBack = async () => {
     if (!lesson || !explainText.trim()) return;
     try {
       setSubmittingExplain(true);
-      const res = await api.explainItBack({
+      setErrorNotice(null);
+      const res = await api.tutorExplainItBack({
         sessionId: lesson.session_id,
-        studentAnswer: explainText,
-        conceptId: lesson.concept_id,
+        response: explainText,
+        requestId: `eib_${lesson.session_id}_${Date.now()}`,
       });
       setExplainResult(res);
-      setCurrentPhase('MASTERY_CONFIRMATION');
+      syncLessonState(res);
       if (speechControllerRef.current && res.feedback) {
         speechControllerRef.current.speak(res.feedback);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to evaluate explain-it-back:', err);
+      setErrorNotice(err.message || 'Failed to evaluate explain-it-back');
     } finally {
       setSubmittingExplain(false);
     }
@@ -269,13 +375,16 @@ export default function LearnTopicPage() {
     if (!lesson) return;
     try {
       setCompleting(true);
+      setErrorNotice(null);
       const res = await api.completeSession(lesson.session_id);
       setCompletionResult(res);
+      syncLessonState(res);
       if (speechControllerRef.current && res.message) {
         speechControllerRef.current.speak(res.message);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to complete session:', err);
+      setErrorNotice(err.message || 'Failed to complete session');
     } finally {
       setCompleting(false);
     }
@@ -316,6 +425,15 @@ export default function LearnTopicPage() {
         </Link>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={handlePauseSession}
+            disabled={pausing}
+            className="px-3.5 py-1.5 bg-amber-50 border border-amber-200 text-amber-900 hover:bg-amber-100 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm min-h-[38px]"
+            title="Save your exact progress and take a break"
+          >
+            <Clock className="w-3.5 h-3.5 text-amber-600" />
+            <span>{pausing ? 'Saving...' : 'Pause for Today'}</span>
+          </button>
           {lesson.strategy_used && (
             <span className="bg-purple-50 border border-purple-200 text-purple-800 text-xs font-extrabold px-3 py-1 rounded-full flex items-center gap-1">
               <Zap className="w-3.5 h-3.5 text-purple-600" />
@@ -328,6 +446,78 @@ export default function LearnTopicPage() {
           </span>
         </div>
       </div>
+
+      {/* Structured Error Notice */}
+      {errorNotice && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-xs text-red-900 flex items-center justify-between shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span className="font-semibold">{errorNotice}</span>
+          </div>
+          <button
+            onClick={() => setErrorNotice(null)}
+            className="text-xs text-red-600 hover:text-red-800 font-bold px-2 py-1"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Pause Confirmation Modal */}
+      {isPaused && pauseInfo && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto text-2xl">
+              ⏸️
+            </div>
+            <h3 className="text-xl font-black text-slate-900">Progress Safely Saved!</h3>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {pauseInfo.message}
+            </p>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-700 text-left">
+              <span className="font-bold block text-slate-900">Tomorrow&apos;s Mission:</span>
+              <span>Continue right from {pauseInfo.concept_name} (10–15 min)</span>
+            </div>
+
+            {/* Quick Feedback before leaving */}
+            {!feedbackSubmitted ? (
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <span className="text-xs font-bold text-slate-500 block">How did today feel, Krish?</span>
+                <div className="flex items-center justify-center gap-2">
+                  {[
+                    { emoji: '😊', label: 'Easy', key: 'EASY' },
+                    { emoji: '🙂', label: 'Good', key: 'GOOD' },
+                    { emoji: '😐', label: 'Okay', key: 'OKAY' },
+                    { emoji: '😕', label: 'Difficult', key: 'DIFFICULT' },
+                    { emoji: '😴', label: 'Boring', key: 'BORING' },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      onClick={() => handleSendFeedback(item.key)}
+                      disabled={submittingFeedback}
+                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-blue-100 text-xl transition-all min-h-[44px] min-w-[44px]"
+                      title={item.label}
+                    >
+                      {item.emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs font-semibold text-emerald-600">✅ Thanks for your feedback, Krish!</p>
+            )}
+
+            <div className="pt-2">
+              <Link
+                href="/"
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm rounded-xl transition-colors block min-h-[44px] flex items-center justify-center"
+              >
+                Back to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lesson Plan Phase Progress Bar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm overflow-x-auto">
@@ -654,9 +844,9 @@ export default function LearnTopicPage() {
               {evaluation.misconception_detected && (
                 <div className="bg-white/90 border border-amber-300/80 rounded-xl p-3.5 text-xs text-amber-900 space-y-1">
                   <span className="font-extrabold block text-amber-950">
-                    ⚠️ Detected Misconception:
+                    💡 Helpful Clue:
                   </span>
-                  <p>{evaluation.misconception_detected}</p>
+                  <p>{evaluation.misconception_detected.replace(/^MISCONCEPTION:\s*/i, '')}</p>
                 </div>
               )}
 
@@ -793,14 +983,47 @@ export default function LearnTopicPage() {
           </div>
 
           {completionResult ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <p className="text-sm text-blue-50 leading-relaxed font-medium">
                 {completionResult.message}
               </p>
+
+              {/* Real Child Feedback Loop */}
+              <div className="pt-3 border-t border-white/20 space-y-2">
+                <span className="text-xs font-extrabold text-blue-100 block">
+                  How did today&apos;s lesson feel, Krish?
+                </span>
+                {!feedbackSubmitted ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { emoji: '😊', label: 'Easy', key: 'EASY' },
+                      { emoji: '🙂', label: 'Good', key: 'GOOD' },
+                      { emoji: '😐', label: 'Okay', key: 'OKAY' },
+                      { emoji: '😕', label: 'Difficult', key: 'DIFFICULT' },
+                      { emoji: '😴', label: 'Boring', key: 'BORING' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => handleSendFeedback(item.key)}
+                        disabled={submittingFeedback}
+                        className="px-3.5 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center gap-1.5 transition-all min-h-[44px]"
+                      >
+                        <span className="text-lg">{item.emoji}</span>
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs font-bold text-emerald-300">
+                    ✅ Thanks for your feedback, Krish! This helps make learning even better.
+                  </p>
+                )}
+              </div>
+
               <div className="flex items-center gap-3 pt-2">
                 <Link
                   href="/"
-                  className="px-6 py-2.5 bg-white text-blue-700 font-extrabold text-xs rounded-xl shadow hover:bg-blue-50 transition-colors"
+                  className="px-6 py-3 bg-white text-blue-700 font-extrabold text-xs rounded-xl shadow hover:bg-blue-50 transition-colors min-h-[44px] flex items-center justify-center"
                 >
                   Finish &amp; Return to Dashboard
                 </Link>

@@ -13,6 +13,10 @@ async def test_state_machine_legal_and_illegal_transitions():
     assert validate_transition(TutorState.LESSON_START, TutorState.TEACHING) is True
     assert validate_transition(TutorState.TEACHING, TutorState.CHECKING_UNDERSTANDING) is True
     assert validate_transition(TutorState.PRACTICE, TutorState.EVALUATING) is True
+    assert validate_transition(TutorState.REMEDIATION, TutorState.CHECKING_UNDERSTANDING) is True
+    assert validate_transition(TutorState.PRACTICE, TutorState.CHECKING_UNDERSTANDING) is True
+    assert validate_transition(TutorState.CHECKING_UNDERSTANDING, TutorState.CHECKING_UNDERSTANDING) is True
+    assert validate_transition(TutorState.REMEDIATION, TutorState.REMEDIATION) is True
 
     # Illegal transition: IDLE cannot jump directly to EVALUATING
     with pytest.raises(StateTransitionError):

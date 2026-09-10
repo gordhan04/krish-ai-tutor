@@ -68,16 +68,27 @@ export default function StudentHomePage() {
     );
   }
 
-  // Determine active chapter & topic for mission
+  // Determine active chapter & topic for mission: prioritize uploaded Karnataka textbook Chapter 1 (Crop Production)
   const primarySubject = subjects[0];
-  const primaryBook = primarySubject?.books[0];
-  const primaryChapter = primaryBook?.chapters[0];
-  const primarySection = primaryChapter?.sections[0];
-  const primaryTopic = primarySection?.topics[0];
+  const primaryBook =
+    primarySubject?.books?.find(
+      (b) =>
+        b.title.toLowerCase().includes('part') ||
+        b.chapters?.some((c) => c.title.toLowerCase().includes('crop'))
+    ) || primarySubject?.books?.[0];
 
-  const missionHref = primaryTopic
-    ? `/learn/${primarySubject.id}/${primaryChapter.id}/${primaryTopic.id}`
-    : '#';
+  const primaryChapter =
+    primaryBook?.chapters?.find((c) =>
+      c.title.toLowerCase().includes('crop')
+    ) || primaryBook?.chapters?.[0];
+
+  const primarySection = primaryChapter?.sections?.[0];
+  const primaryTopic = primarySection?.topics?.[0];
+
+  const missionHref =
+    primaryTopic && primarySubject && primaryChapter
+      ? `/learn/${primarySubject.id}/${primaryChapter.id}/${primaryTopic.id}`
+      : '#';
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -123,6 +134,23 @@ export default function StudentHomePage() {
                 {dashboard.streak.days_completed}/{dashboard.streak.target_days} consistency
               </span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* First-5-Minutes Learning Coach Banner */}
+      <div className="bg-blue-50/80 border border-blue-200/80 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+            💡
+          </div>
+          <div className="space-y-1">
+            <h3 className="font-bold text-blue-950 text-sm sm:text-base">
+              Welcome Krish! Here is how your AI Tutor works:
+            </h3>
+            <p className="text-xs sm:text-sm text-blue-800/90 leading-relaxed">
+              Complete your <strong>10–15 minute daily mission</strong>, practice real textbook questions, and earn <strong>XP & Mastery</strong>. You can pause anytime — your exact progress is always saved!
+            </p>
           </div>
         </div>
       </div>
@@ -192,8 +220,12 @@ export default function StudentHomePage() {
                 }`}
               />
               <div className="text-xs">
-                <span className="font-bold block text-white">Fix 1 weak concept</span>
-                <span className="text-slate-300">Electrolytes & Ions</span>
+                <span className="font-bold block text-white">Focus Concept</span>
+                <span className="text-slate-300">
+                  {dashboard.daily_mission.chapter_name.includes('Crop')
+                    ? 'Crop Practices & Irrigation'
+                    : 'Key Concepts'}
+                </span>
               </div>
             </div>
           </div>
@@ -203,12 +235,16 @@ export default function StudentHomePage() {
               href={missionHref}
               className="w-full sm:w-auto px-8 py-3.5 bg-white text-blue-900 hover:bg-blue-50 font-extrabold rounded-2xl shadow-lg shadow-black/20 flex items-center justify-center gap-2 group transition-all"
             >
-              <span>START MISSION</span>
+              <span>
+                {dashboard.next_best_action.toLowerCase().includes('continue')
+                  ? 'CONTINUE MISSION'
+                  : 'START MISSION'}
+              </span>
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
 
             <span className="text-xs font-semibold text-blue-200">
-              +{dashboard.daily_mission.xp_reward} XP upon completion
+              +{dashboard.daily_mission.xp_reward} XP upon completion • 10–15 min
             </span>
           </div>
         </div>
@@ -234,60 +270,137 @@ export default function StudentHomePage() {
         </Link>
       </div>
 
-      {/* 4. Subject Progression */}
+      {/* 4. Subject & Textbook Progression */}
       <div className="space-y-4">
-        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-blue-600" />
-          Krish&apos;s Curriculum (Class 8)
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-blue-600" />
+            Krish&apos;s Curriculum &amp; Textbooks (Class 8)
+          </h3>
+          <span className="text-xs font-semibold text-slate-500">
+            Karnataka State Board &amp; NCERT
+          </span>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {subjects.map((subj) => {
-            const book = subj.books[0];
-            const ch = book?.chapters[0];
-            const top = ch?.sections[0]?.topics[0];
-            const topicHref = top ? `/learn/${subj.id}/${ch.id}/${top.id}` : '#';
+        <div className="grid grid-cols-1 gap-5">
+          {subjects.flatMap((subj) =>
+            (subj.books || []).map((book) => {
+              const isPrimaryKarnatakaBook =
+                book.title.toLowerCase().includes('part') ||
+                book.publisher?.toLowerCase().includes('karnataka');
 
-            return (
-              <div
-                key={subj.id}
-                className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm hover:border-blue-300 transition-all group"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                    <Atom className="w-6 h-6" />
-                  </div>
-                  <span className="bg-slate-100 text-slate-700 font-bold text-xs px-2.5 py-1 rounded-full">
-                    Class {subj.grade_level}
-                  </span>
-                </div>
-
-                <div className="mt-4">
-                  <h4 className="text-xl font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                    {subj.name}
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-0.5">{book?.title || 'NCERT Class 8'}</p>
-                </div>
-
-                {ch && (
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-400 block">Current Chapter:</span>
-                      <span className="text-sm font-bold text-slate-800">
-                        Ch {ch.chapter_number}: {ch.title}
-                      </span>
+              return (
+                <div
+                  key={book.id}
+                  className={`bg-white border rounded-3xl p-6 shadow-sm transition-all ${
+                    isPrimaryKarnatakaBook
+                      ? 'border-blue-300 ring-2 ring-blue-500/10'
+                      : 'border-slate-200/80'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-3.5">
+                      <div
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold shadow-sm ${
+                          isPrimaryKarnatakaBook
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        <Atom className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-lg font-extrabold text-slate-900">
+                            {book.title}
+                          </h4>
+                          {isPrimaryKarnatakaBook && (
+                            <span className="bg-blue-100 text-blue-800 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full">
+                              Uploaded Karnataka Textbook
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {book.publisher} • {book.edition} • Class {subj.grade_level} Science
+                        </p>
+                      </div>
                     </div>
-                    <Link
-                      href={topicHref}
-                      className="w-9 h-9 rounded-xl bg-slate-100 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center text-slate-600 transition-colors"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </Link>
+
+                    <span className="text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1 rounded-xl self-start sm:self-auto">
+                      {book.chapters?.length || 0} Chapters
+                    </span>
                   </div>
-                )}
-              </div>
-            );
-          })}
+
+                  {/* Chapters Grid */}
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {(book.chapters || []).map((ch) => {
+                      const firstTopic = ch.sections?.[0]?.topics?.[0];
+                      const topicHref = firstTopic
+                        ? `/learn/${subj.id}/${ch.id}/${firstTopic.id}`
+                        : '#';
+                      const isPublished = ch.status === 'PUBLISHED';
+
+                      return (
+                        <div
+                          key={ch.id}
+                          className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                            isPublished
+                              ? 'bg-slate-50/70 border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/40'
+                              : 'bg-slate-50/30 border-slate-100'
+                          }`}
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-blue-700">
+                                Ch {ch.chapter_number}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isPublished
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {isPublished ? 'Ready to Learn' : 'In Review'}
+                              </span>
+                            </div>
+                            <h5
+                              className="text-sm font-bold text-slate-800 truncate"
+                              title={ch.title}
+                            >
+                              {ch.title}
+                            </h5>
+                            <span className="text-[11px] text-slate-400 block">
+                              {ch.sections?.length || 0} Sections
+                              {ch.printed_page_start && ch.printed_page_end
+                                ? ` • Pages ${ch.printed_page_start}–${ch.printed_page_end}`
+                                : ''}
+                            </span>
+                          </div>
+
+                          <Link
+                            href={topicHref}
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+                              isPublished
+                                ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                                : 'bg-slate-200 text-slate-400 pointer-events-none'
+                            }`}
+                            title={
+                              isPublished
+                                ? `Start Chapter ${ch.chapter_number}`
+                                : 'Chapter in review'
+                            }
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

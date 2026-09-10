@@ -4,6 +4,47 @@ from typing import List, Dict, Any, Tuple
 from pypdf import PdfReader
 
 
+KTBS_PUA_CHARMAP = {
+    0x20: ' ', 0xF2: '.', 0xF4: ',', 0xF5: ';', 0xF6: ':', 0xE1: '?', 0xFF: '?',
+    0xE2: '!', 0xE3: '-', 0xF3: '-', 0xE6: ' : ', 0xF8: '(', 0xF7: ')',
+    0xC5: '(', 0xC3: ')', 0x8E: "'", 0x8F: "'", 0x89: '"', 0x8A: '"',
+    0xC1: '"', 0xC2: "'",
+}
+
+
+def normalize_extracted_text(text: str) -> str:
+    """
+    Normalizes extracted text. If text contains custom/InDesign PUA-encoded
+    characters (0xF000-0xF0FF) from legacy fonts (e.g. KTBS / Softland),
+    decodes them using reverse-byte substitution.
+    Standard text without PUA characters passes through untouched.
+    """
+    if not text:
+        return text
+    pua_count = sum(1 for c in text if 0xF000 <= ord(c) <= 0xF0FF)
+    if pua_count == 0:
+        return text
+
+    decoded = []
+    for c in text:
+        code = ord(c)
+        if 0xF000 <= code <= 0xF0FF:
+            b = code - 0xF000
+            if 0xC6 <= b <= 0xDF:
+                decoded.append(chr(ord('A') + (0xDF - b)))
+            elif 0xA6 <= b <= 0xBF:
+                decoded.append(chr(ord('a') + (0xBF - b)))
+            elif 0xE7 <= b <= 0xF0:
+                decoded.append(chr(ord('0') + (0xF0 - b)))
+            elif b in KTBS_PUA_CHARMAP:
+                decoded.append(KTBS_PUA_CHARMAP[b])
+            else:
+                decoded.append(' ')
+        else:
+            decoded.append(c)
+    return "".join(decoded)
+
+
 class ExtractedPage:
     def __init__(self, page_number: int, text: str):
         self.page_number = page_number
@@ -52,7 +93,7 @@ class PDFExtractor:
                 page_num = idx + 1
                 try:
                     text = page.extract_text() or ""
-                    cleaned_text = text.replace("\x00", "").strip()
+                    cleaned_text = normalize_extracted_text(text.replace("\x00", "")).strip()
                     extracted_page = ExtractedPage(page_number=page_num, text=cleaned_text)
                     pages.append(extracted_page)
                     total_chars += extracted_page.char_count
